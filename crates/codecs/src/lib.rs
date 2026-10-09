@@ -20,6 +20,7 @@ mod format;
 mod image;
 mod options;
 pub mod orientation;
+pub mod stereo;
 pub mod web;
 
 pub use crate::codecs::png::encode_indexed as encode_png_indexed;
