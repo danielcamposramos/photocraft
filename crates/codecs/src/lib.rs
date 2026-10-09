@@ -24,6 +24,7 @@ mod options;
 pub mod orientation;
 pub mod resolution;
 pub mod source_settings;
+pub mod stereo;
 pub mod web;
 
 pub use crate::codecs::exr_cryptomatte::{cryptomatte_id, cryptomatte_key, cryptomatte_preview_color};
