@@ -176,6 +176,10 @@ fn import_stages(name: &str, bytes: &[u8], ctl: &photocraft_raster::Interrupt) -
     if raw::is_raw(bytes) {
         return raw::import_raw(name, bytes);
     }
+    // A stereo pair (MPO, JPS, PNG with sTER) opens as one picture of both eyes side by side.
+    if let Some(layout) = photocraft_codecs::stereo::layout(bytes, has_extension(name, "jps")) {
+        return flat::import_stereo(name, bytes, &layout);
+    }
     flat::import_flat(name, bytes)
 }
 
@@ -205,6 +209,11 @@ pub fn export(doc: &Document, name_or_ext: &str, opts: &ExportOptions) -> Result
         file.header.validate()?;
         let bytes = file.to_bytes()?;
         return Ok(ExportResult { bytes, warnings });
+    }
+    // MPO and JPS hold a stereo pair, and a stereo document's PNG gets sTER; other formats get the
+    // pair as it is, side by side
+    if matches!(ext.as_str(), "mpo" | "jps") || (doc.stereo && ext == "png") {
+        return flat::export_stereo(doc, &ext, opts);
     }
     let format = photocraft_codecs::from_extension(&ext).ok_or_else(|| IoError::UnknownFormat(name_or_ext.to_string()))?;
     if format == photocraft_codecs::Format::Tiff && opts.tiff_layers && tiff_layers::would_write_layers(doc) {

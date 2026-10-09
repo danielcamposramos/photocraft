@@ -281,10 +281,48 @@ fn opaque_surface(s: &Surface, r: Rect) -> bool {
 
 /// Flattens and encodes as `format`.
 pub fn export_flat(doc: &Document, format: Format, opts: &ExportOptions) -> Result<ExportResult, IoError> {
-    use photocraft_cms::{Builtin, Intent};
     if let Some(r) = export_mode_specific(doc, format, opts)? {
         return Ok(r);
     }
+    let (img, warnings) = flat_image(doc, format, opts)?;
+    let bytes = codecs::encode(&img, format, &opts.encode)?;
+    Ok(ExportResult { bytes, warnings })
+}
+
+/// A stereo document ([`Document::stereo`]) as a stereo file: `ext` `mpo` (CIPA DC-007, two
+/// Disparity images, left eye first), `jps` (cross-eyed side by side with a VRex descriptor) or
+/// `png` (`sTER` mode 1, PNG Extensions 1.4.0 §3.6). The pixels are prepared as for a flat JPEG or
+/// PNG export.
+pub fn export_stereo(doc: &Document, ext: &str, opts: &ExportOptions) -> Result<ExportResult, IoError> {
+    if !doc.stereo {
+        return Err(IoError::Unsupported(format!(
+            "{} files hold a stereo pair: only a stereo document (opened from an MPO, JPS or PNG with sTER) can be saved as one",
+            ext.to_ascii_uppercase()
+        )));
+    }
+    let format = if ext == "png" { Format::Png } else { Format::Jpeg };
+    let (img, warnings) = flat_image(doc, format, opts)?;
+    let bytes = match ext {
+        "mpo" => codecs::stereo::encode_mpo(&img, &opts.encode)?,
+        "jps" => codecs::stereo::encode_jps(&img, &opts.encode)?,
+        _ => codecs::stereo::encode_png(&img, &opts.encode)?,
+    };
+    Ok(ExportResult { bytes, warnings })
+}
+
+/// A stereo file ([`codecs::stereo`]: MPO, JPS, PNG with `sTER`) as a single-layer stereo
+/// document: both eyes side by side, the left eye on the left.
+pub fn import_stereo(name: &str, bytes: &[u8], layout: &codecs::stereo::StereoLayout) -> Result<ImportResult, IoError> {
+    let img = codecs::stereo::decode_pair(bytes, layout, &codecs::DecodeOptions::default())?;
+    let mut r = image_to_document(name, &img)?;
+    r.document.stereo = true;
+    Ok(r)
+}
+
+/// The pixels of a flat export of `doc` as `format`, converted as that format needs, and what the
+/// conversion loses.
+fn flat_image(doc: &Document, format: Format, opts: &ExportOptions) -> Result<(Image, Vec<String>), IoError> {
+    use photocraft_cms::{Builtin, Intent};
     let mut warnings = Vec::new();
     let mut img = document_to_image(doc, &mut warnings)?;
     if opts.xmp == XmpEmbed::None {
@@ -320,8 +358,7 @@ pub fn export_flat(doc: &Document, format: Format, opts: &ExportOptions) -> Resu
         }
         warnings.push(w.to_string());
     }
-    let bytes = codecs::encode(&img, format, &opts.encode)?;
-    Ok(ExportResult { bytes, warnings })
+    Ok((img, warnings))
 }
 
 /// `img` with every band of rows mapped by `f` (normalized samples in, normalized `layout`

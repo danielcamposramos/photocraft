@@ -694,6 +694,11 @@ pub struct Document {
     pub variables: Variables,
     /// Window › Timeline (None until a video timeline is created).
     pub timeline: Option<Timeline>,
+    /// The canvas holds a stereo pair, full side by side: the left eye in the left half, the right
+    /// eye in the right half, each half the canvas wide. Set by opening an MPO, JPS or PNG with
+    /// `sTER`; saving as MPO, JPS or PNG writes the pair back with its mark. Edits are made on the
+    /// side-by-side canvas.
+    pub stereo: bool,
 }
 
 /// Where a layer lives in the tree: indices from the root down.
@@ -731,6 +736,7 @@ impl Document {
             slices: Slices::default(),
             variables: Variables::default(),
             timeline: None,
+            stereo: false,
         }
     }
 
