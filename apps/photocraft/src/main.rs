@@ -71,6 +71,9 @@ mod services;
 // macOS gets one instance from LaunchServices (open-documents Apple events).
 #[cfg(any(not(target_os = "macos"), test))]
 mod single_instance;
+// The Stereo View window needs a Wayland or X11 desktop; elsewhere View ▸ Stereo View stays disabled.
+#[cfg(all(unix, not(target_os = "macos")))]
+mod stereo_view;
 // Tablet support (macOS AppKit monitor, Linux X11/Wayland, Windows barrel button).
 mod tablet;
 mod ui_state;
@@ -729,6 +732,10 @@ fn main() -> eframe::Result {
                     services.xwayland_command =
                         services::xwayland_command(var("FLATPAK_ID").as_deref(), var("APPIMAGE").as_deref(), std::env::var_os("DISPLAY").is_some());
                 }
+            }
+            #[cfg(all(unix, not(target_os = "macos")))]
+            {
+                services.stereo_view = Some(Box::new(stereo_view::Host::new(APP_ID)));
             }
             #[cfg(target_os = "linux")]
             let session = {
