@@ -37,6 +37,7 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("view.snap", "Snap", &["View"], Some("Cmd+Shift+;")),
     ("view.lockGuides", "Lock Guides", &["View"], Some("Cmd+Alt+;")),
     ("view.extras", "Extras", &["View"], Some("Cmd+H")),
+    ("view.stereoView", "Stereo View", &["View"], None),
     ("view.show.targetPath", "Target Path", &["View", "Show"], Some("Cmd+Shift+H")),
     ("view.screenMode.cycle", "Cycle Screen Mode", &[], Some("F")),
     // Photoshop's interface brightness shortcuts: step through the four Pro themes.
