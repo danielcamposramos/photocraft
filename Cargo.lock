@@ -3442,6 +3442,7 @@ dependencies = [
  "photocraft-geom",
  "photocraft-io",
  "photocraft-raster",
+ "photocraft-stereo-window",
  "photocraft-tablet",
  "photocraft-ui-egui",
  "rfd",
@@ -3725,6 +3726,19 @@ dependencies = [
  "photocraft-raw",
  "png 0.18.1",
  "rayon",
+]
+
+[[package]]
+name = "photocraft-stereo-window"
+version = "0.3.0"
+dependencies = [
+ "log",
+ "smithay-client-toolkit 0.20.0",
+ "thiserror 2.0.21",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-scanner",
+ "x11rb",
 ]
 
 [[package]]

@@ -29,6 +29,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("view.snap", "Snap", &["View"], Some("Cmd+Shift+;")),
     ("view.lockGuides", "Lock Guides", &["View"], Some("Cmd+Alt+;")),
     ("view.extras", "Extras", &["View"], Some("Cmd+H")),
+    ("view.stereoView", "Stereo View", &["View"], None),
     ("view.show.targetPath", "Target Path", &["View", "Show"], Some("Cmd+Shift+H")),
     ("view.screenMode.cycle", "Cycle Screen Mode", &[], Some("F")),
     ("edit.freeTransformCopy", "Free Transform a Copy", &[], Some("Cmd+Alt+T")),
@@ -360,6 +361,10 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             };
             app.run("edit.paste", p)
         }
+        "view.stereoView" => {
+            let on = params.get("enabled").and_then(Value::as_bool).unwrap_or(!app.stereo_view.wanted);
+            crate::stereo_view::toggle(app, on).map(|()| json!({"stereoView": app.stereo_view.wanted}))
+        }
         "view.rulers" | "view.show.grid" | "view.show.guides" | "view.snap" | "view.lockGuides" => {
             let e = &mut app.ui.extras;
             let slot = match id {
@@ -490,6 +495,7 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
         i if proof_preset(i).is_some() => app.session.active().is_some(),
         // "Custom…" is the full Proof Setup dialog.
         "view.proofSetup.custom" => app.session.active().is_some(),
+        "view.stereoView" => crate::stereo_view::enabled(app),
         "view.rulers" | "view.show.grid" | "view.show.guides" | "view.snap" | "view.lockGuides" => true,
         // An image copied in another app can only be seen by reading the OS clipboard, which happens
         // on an explicit paste: with a clipboard service these stay enabled. Paste and New from
@@ -575,6 +581,7 @@ fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
     }
     let e = &app.ui.extras;
     match id {
+        "view.stereoView" => return Some(app.stereo_view.wanted),
         "view.rulers" => return Some(e.rulers),
         "view.show.grid" => return Some(e.grid),
         "view.show.guides" => return Some(e.guides),

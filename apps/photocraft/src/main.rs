@@ -32,6 +32,9 @@ mod mac_window;
 mod linux_libs;
 mod monitor_profile;
 mod services;
+// The Stereo View window needs a Wayland or X11 desktop; elsewhere View ▸ Stereo View stays disabled.
+#[cfg(all(unix, not(target_os = "macos")))]
+mod stereo_view;
 // Windows gets pen pressure from winit (WM_POINTER); the web runner has its own listener.
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
 mod tablet;
@@ -270,6 +273,10 @@ fn main() -> eframe::Result {
             #[cfg(target_os = "linux")]
             {
                 services.is_wayland = display == Some(tablet::DisplayKind::Wayland);
+            }
+            #[cfg(all(unix, not(target_os = "macos")))]
+            {
+                services.stereo_view = Some(Box::new(stereo_view::Host::new(APP_ID)));
             }
             let mut app = PhotocraftApp::new(Session::new(), services);
             app.integrated_titlebar = cfg!(target_os = "macos");

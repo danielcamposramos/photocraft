@@ -116,6 +116,7 @@ pub mod slice_ui;
 pub mod smart_ui;
 pub mod snap_ui;
 pub mod state;
+pub mod stereo_view;
 pub mod stroke_constraint;
 pub mod stroke_trail;
 pub mod stylus;
@@ -289,12 +290,17 @@ pub struct Services {
     /// Reads the displays and their ICC profiles in the background (desktop macOS; see
     /// `monitor_status`). Without one, the canvas uses the profile chosen in Color Settings, or sRGB.
     pub read_displays: Option<monitor_status::ReadDisplaysFn>,
+    /// The window View ▸ Stereo View shows a stereo document in, declared to the desktop (desktop
+    /// hosts only; without it the command is disabled).
+    pub stereo_view: Option<Box<dyn stereo_view::StereoViewHost>>,
 }
 
 pub struct PhotocraftApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
+    /// View ▸ Stereo View.
+    pub stereo_view: stereo_view::StereoView,
     /// Canvas caches per (document, display): CPU textures hold monitor values; the GPU
     /// canvas state is shared (`canvas::GPU_OUTPUT`).
     canvases: HashMap<(DocId, u32), canvas::CanvasCache>,
@@ -459,6 +465,7 @@ impl PhotocraftApp {
             session,
             ui: UiState::default(),
             services,
+            stereo_view: Default::default(),
             canvases: HashMap::new(),
             monitors: Default::default(),
             checker: None,
@@ -1026,6 +1033,7 @@ impl eframe::App for PhotocraftApp {
         if !self.pending_screenshots.is_empty() {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
+        stereo_view::tick(self, ctx);
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {

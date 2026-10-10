@@ -425,6 +425,26 @@ fn display_image(display: Option<&photocraft_engine::display_color::CanvasDispla
     }
 }
 
+/// What the main window's canvas shows of document `idx` as RGBA8 monitor values (straight
+/// alpha), with a key that changes whenever the picture does (the document, a live preview, the
+/// monitor profile, the revision), and whether the document holds a stereo pair. The Stereo View window shows
+/// this picture.
+pub(crate) fn shown_rgba8(app: &mut PhotocraftApp, idx: usize) -> (photocraft_doc::DocId, u64, bool, impl FnOnce() -> photocraft_raster::Rgba8Image + use<>) {
+    let revision = app.session.documents().get(idx).map_or(0, |st| st.revision);
+    let (doc, preview_key) = display_doc(app, idx);
+    let (display, display_key) = canvas_display(app, &doc, None);
+    let (id, stereo) = (doc.id, doc.stereo);
+    let key = preview_key ^ revision.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ display_key.rotate_left(17);
+    let render = move || {
+        let buf = photocraft_compose::flatten(&doc);
+        match display.as_deref() {
+            Some(d) if !d.is_identity() => d.to_rgba8(&buf),
+            _ => buf.to_rgba8(),
+        }
+    };
+    (id, key, stereo, render)
+}
+
 /// The canvas display of `doc` on `display` (`None`: the main window's) and a key that changes
 /// with it (folded into the canvas caches' preview keys, so a monitor or profile change
 /// re-renders).
