@@ -444,6 +444,8 @@ pub type LastUpdateFn = fn() -> Option<Result<String, String>>;
 /// I/O dependencies.
 #[derive(Default)]
 pub struct Services {
+    /// Native host for the declared Stereo View child.
+    pub stereo_view: Option<Box<dyn crate::stereo_view::StereoViewHost>>,
     /// Explicit interactive SVG smart-object editing; unavailable in browser and automation.
     pub open_external_svg: Option<OpenExternalSvgFn>,
     /// User-initiated desktop/browser pixel sampling.

@@ -129,6 +129,7 @@ photocraft/
 │  ├─ codecs/                  photocraft-codecs    flat raster decode/encode at format-supported depths; AVIF encode only (feature `avif`), HEIF/HEIC decode only (feature `heif`); no JPEG XL
 │  ├─ heif/                    photocraft-heif      optional HEIF/HEIC decoder (heic-rs, pure Rust); used only by codecs behind its `heif` feature (standalone)
 │  ├─ affinity/                photocraft-affinity  bounded native Affinity reader: archive, object stream, layers, vectors, text, pixels (standalone; read only)
+│  ├─ stereo-window/           photocraft-stereo-window  the Stereo View window (View ▸ Stereo View): shows a stereo pair and declares it to the desktop, Wayland `kde_stereo_content_v1` + X11 property, no output formats (standalone, safe Rust)
 │  ├─ raw/                     photocraft-raw       clean-room camera RAW decode (DNG, CR2, TIFF/EP) + develop pipeline (standalone, like psd)
 │  ├─ format/                  photocraft-format    native document format (.pcraft bundle): manifest + content-addressed tiles
 │  ├─ io/                      photocraft-io        import/export orchestration; doc ⇄ PSD mapping; PDF/SVG import (features)
@@ -156,6 +157,8 @@ photocraft/
 ```
 
 **What exists today.** This layout is the target design. Built so far: `geom`, `cms`, `color`, `raster`, `psd`, `codecs`, `doc`, `ops`, `algo`, `paint`, `text`, `vector`, `compose`, `gpu`, `format`, `raw`, `io`, `plugins`, `engine`, `ui-egui`, `automation`, `testkit`, and the three apps. Not yet split out: `viewport` and `tools` live inside `ui-egui` and `engine`; `platform` services are function hooks injected by each app (`ui_egui::Services`); `adobe-assets` and `ml` are not started.
+
+**Stereo View.** A stereo document (`Document::stereo`: MPO, JPS or PNG `sTER`, both eyes full side by side, left eye first) can be shown in a window of its own with View ▸ Stereo View (`view.stereoView`; the host installs the window through `Services::stereo_view`, the desktop app with `photocraft-stereo-window`; the web leaves the command disabled). The window gets the picture the canvas shows and declares it to the desktop once, while it shows a pair: on Wayland `kde_stereo_content_v1.set_content(side_by_side_full)` on its surface (`wp_viewporter` gives the surface one eye's size), on X11 the `_KDE_NET_WM_STEREO_CONTENT` window property. PhotoCraft has no output formats: the desktop decides what each screen shows (a 3D mode, a virtual 3D mode, or the left eye on a plain screen), and where the desktop announces no declaration the window shows the left eye only. A document that is not a pair is shown as it is and never declared.
 
 **Crate granularity:** start with the crates above. Split `algo` into `-adjust`, `-filters`, `-select`, `-inpaint` and `-warp` once any module passes about 10k lines, or once compile times hurt. Its internal module boundaries should already follow those lines.
 

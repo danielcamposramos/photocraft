@@ -675,6 +675,10 @@ fn invoke_view_command(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, p
         "view.clearSelectedGuides" => {
             Some(crate::guide_select::delete_selected(app).and_then(|done| if done { Ok(Value::Null) } else { Err("No guide is selected".to_string()) }))
         }
+        "view.stereoView" => {
+            let on = params.get("enabled").and_then(Value::as_bool).unwrap_or(!app.stereo_view.wanted);
+            crate::stereo_view::toggle(app, on).map(|()| json!({"stereoView": app.stereo_view.wanted}))
+        }
         "view.rulers" | "view.show.grid" | "view.show.guides" | "view.snap" | "view.lockGuides" => {
             let extras = &mut app.ui.extras;
             let slot = match id {

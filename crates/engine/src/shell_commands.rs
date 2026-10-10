@@ -46,6 +46,7 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("view.editSelectedGuides", "Edit Selected Guides", &["View", "Guides"], None),
     ("view.clearSelectedGuides", "Clear Selected Guides", &["View", "Guides"], None),
     ("view.extras", "Extras", &["View"], Some("Cmd+H")),
+    ("view.stereoView", "Stereo View", &["View"], None),
     ("view.show.targetPath", "Target Path", &["View", "Show"], Some("Cmd+Shift+H")),
     ("view.screenMode.cycle", "Cycle Screen Mode", &[], Some("F")),
     // Photoshop's interface brightness shortcuts: step through the four Pro themes.

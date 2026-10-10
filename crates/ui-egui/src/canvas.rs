@@ -3321,3 +3321,5 @@ fn polygon_edge_scroll(app: &PhotocraftApp, ctx: &egui::Context, idx: usize, rec
     view.center[0] += delta.x;
     view.center[1] += delta.y;
 }
+
+pub(crate) use display::shown_rgba8;

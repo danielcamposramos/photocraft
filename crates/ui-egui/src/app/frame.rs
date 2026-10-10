@@ -145,6 +145,7 @@ impl PhotocraftApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
         }
         self.poll_file_dialog(ctx, Some(frame));
+        crate::stereo_view::tick(self, ctx);
     }
 
     /// Shared UI body. A wrapping host must call `finish_type_reset_pass` after return,

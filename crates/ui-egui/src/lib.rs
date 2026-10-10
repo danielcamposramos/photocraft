@@ -55,6 +55,7 @@ pub mod proxy;
 pub mod render_path;
 pub mod screenshot;
 pub mod state;
+pub mod stereo_view;
 pub mod texel_guard;
 pub mod theme;
 pub use titlebar::{Caption, CaptionFamily, CaptionIcon, CaptionIcons, CaptionStyle, RenderIconFn};
@@ -352,6 +353,7 @@ pub struct PhotocraftApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
+    pub stereo_view: stereo_view::StereoView,
     /// Canvas caches per (document, display): CPU textures hold monitor values; the GPU
     /// canvas state is shared (`canvas::GPU_OUTPUT`).
     canvases: HashMap<(DocId, u32), canvas::CanvasCache>,
