@@ -513,6 +513,10 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             };
             app.run("edit.paste", p)
         }
+        "view.stereoView" => {
+            let on = params.get("enabled").and_then(Value::as_bool).unwrap_or(!app.stereo_view.wanted);
+            crate::stereo_view::toggle(app, on).map(|()| json!({"stereoView": app.stereo_view.wanted}))
+        }
         "view.rulers" | "view.show.grid" | "view.show.guides" | "view.snap" | "view.lockGuides" => {
             let e = &mut app.ui.extras;
             let slot = match id {
@@ -715,6 +719,7 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
         i if proof_preset(i).is_some() => app.session.active().is_some(),
         // "Custom…" is the full Proof Setup dialog.
         "view.proofSetup.custom" => app.session.active().is_some(),
+        "view.stereoView" => crate::stereo_view::enabled(app),
         "view.rulers" | "view.show.grid" | "view.show.guides" | "view.snap" | "view.lockGuides" => true,
         "edit.cut" | "edit.copy" if app.ui.text_edit.is_some() => crate::type_tool::selected_range(app).is_some(),
         "edit.paste" | "select.all" if app.ui.text_edit.is_some() => true,
@@ -816,6 +821,7 @@ fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
     }
     let e = &app.ui.extras;
     match id {
+        "view.stereoView" => return Some(app.stereo_view.wanted),
         "view.rulers" => return Some(e.rulers),
         "view.show.grid" => return Some(e.grid),
         "view.show.guides" => return Some(e.guides),

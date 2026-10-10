@@ -197,6 +197,7 @@ pub(crate) mod solid_fill_ui;
 pub mod spring_tools;
 pub mod stack_dialog;
 pub mod state;
+pub mod stereo_view;
 pub mod stroke_constraint;
 pub mod stroke_trace;
 pub mod stroke_trail;
@@ -559,6 +560,9 @@ pub struct Services {
     /// while AppKit's run loop is still going crashes or hangs Touch Bar Macs (#1575, #1458).
     /// Without one, eframe closes the window and the app ends with it.
     pub quit: Option<QuitFn>,
+    /// The window View ▸ Stereo View shows a stereo document in, declared to the desktop (desktop
+    /// hosts only; without it the command is disabled).
+    pub stereo_view: Option<Box<dyn stereo_view::StereoViewHost>>,
 }
 
 /// A document histogram being computed off the UI thread: (document, revision, receiver of
@@ -572,6 +576,8 @@ pub struct PhotocraftApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
+    /// View ▸ Stereo View.
+    pub stereo_view: stereo_view::StereoView,
     /// Canvas caches per (document, display): CPU textures hold monitor values; the GPU
     /// canvas state is shared (`canvas::GPU_OUTPUT`).
     canvases: HashMap<(DocId, u32), canvas::CanvasCache>,
@@ -864,6 +870,7 @@ impl PhotocraftApp {
             session,
             ui: UiState::default(),
             services,
+            stereo_view: Default::default(),
             canvases: HashMap::new(),
             navigator_textures: HashMap::new(),
             display_memo: HashMap::new(),
@@ -1970,6 +1977,7 @@ impl eframe::App for PhotocraftApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
         self.poll_file_dialog(ctx, Some(frame));
+        stereo_view::tick(self, ctx);
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
