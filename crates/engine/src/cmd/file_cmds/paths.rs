@@ -132,6 +132,7 @@ pub fn layered_extension(ext: &str) -> bool {
 /// doesn't hold the document is a copy, and File › Save goes through Save As, so an editable
 /// original is never overwritten with less than it had (#3806).
 pub fn holds(doc: &photocraft_doc::Document, ext: &str) -> bool {
+    if photocraft_io::stereo_metadata_loss(doc, ext).is_some() { return false; }
     match ext {
         "psd" | "psb" | "pcraft" => true,
         "ora" => photocraft_io::ora_losses(doc).is_empty(),
@@ -147,10 +148,12 @@ pub fn holds_at(doc: &photocraft_doc::Document, path: &str) -> bool {
 /// What a save of `doc` to `path` would leave out when its format can't hold it: OpenRaster's
 /// [`photocraft_io::ora_losses`]; empty for other formats.
 pub fn losses_at(doc: &photocraft_doc::Document, path: &str) -> Vec<String> {
-    match extension(path).as_deref() {
+    let mut losses = match extension(path).as_deref() {
         Some("ora") => photocraft_io::ora_losses(doc),
         _ => Vec::new(),
-    }
+    };
+    if let Some(loss) = photocraft_io::stereo_metadata_loss(doc, path) { losses.push(loss.into()); }
+    losses
 }
 
 /// Whether `path` names a document template (.psdt). A template opens as a new untitled document

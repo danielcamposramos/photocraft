@@ -73,6 +73,7 @@ fn other_formats_get_the_pair_side_by_side() {
     let doc = import(name, bytes).unwrap().document;
     let out = export(&doc, "out.jpg", &ExportOptions::default()).unwrap();
     assert!(stereo::layout(&out.bytes, false).is_none());
+    assert!(out.warnings.iter().any(|w| w.contains("stereo metadata")));
     let back = import("out.jpg", &out.bytes).unwrap().document;
     assert!(!back.stereo);
     assert_eq!((back.size.width, back.size.height), (2 * EYE_W, H));
@@ -112,4 +113,17 @@ fn stereo_export_preserves_cancellation() {
     for name in ["pair.mpo", "pair.jps", "pair.png"] {
         assert!(matches!(export_with(&doc, name, &ExportOptions::default(), &ctl), Err(IoError::Cancelled)));
     }
+}
+
+#[test]
+fn layered_exports_report_lost_stereo_identity() {
+    let doc = import("pair.mpo", &files()[0].1).unwrap().document;
+    for ext in ["psd", "psb", "ora", "tiff"] {
+        let out = export(&doc, &format!("out.{ext}"), &ExportOptions::default()).unwrap();
+        assert!(out.warnings.iter().any(|w| w.contains("stereo metadata")), "{ext}");
+        assert!(!import(&format!("out.{ext}"), &out.bytes).unwrap().document.stereo);
+    }
+    let out = export(&doc, "out.pcraft", &ExportOptions::default()).unwrap();
+    assert!(out.warnings.is_empty());
+    assert_pair(&import("out.pcraft", &out.bytes).unwrap().document, "native stereo save");
 }

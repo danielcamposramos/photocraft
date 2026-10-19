@@ -1086,6 +1086,13 @@ pub fn named_for_file<'a>(doc: &'a Document, name: &str) -> std::borrow::Cow<'a,
     }
 }
 
+/// Warn when an export keeps the paired pixels but cannot identify them as stereo on reopen.
+/// Only the native document and the implemented stereo picture formats retain this meaning.
+pub fn stereo_metadata_loss(doc: &Document, name_or_ext: &str) -> Option<&'static str> {
+    (doc.stereo && !matches!(extension(name_or_ext).as_str(), "pcraft" | "mpo" | "jps" | "png"))
+        .then_some("stereo metadata will be lost; the pixels stay side by side. Save as .pcraft to preserve the editable stereo document")
+}
+
 /// Exports `doc` to the format named by `name_or_ext` (a file name, path or
 /// bare extension).
 pub fn export(doc: &Document, name_or_ext: &str, opts: &ExportOptions) -> Result<ExportResult, IoError> {
@@ -1108,7 +1115,8 @@ pub fn export_with_renderer(
     ctl: &photocraft_raster::Interrupt,
     renderer: Option<&mut dyn BandRenderer>,
 ) -> Result<ExportResult, IoError> {
-    let r = checked_stages(doc, name_or_ext, opts, ctl, renderer)?;
+    let mut r = checked_stages(doc, name_or_ext, opts, ctl, renderer)?;
+    if let Some(loss) = stereo_metadata_loss(doc, name_or_ext) { r.warnings.push(loss.into()); }
     let bytes = r.encoded.into_bytes()?;
     ctl.check().map_err(|_| IoError::Cancelled)?;
     ctl.progress(1.0);
