@@ -1469,7 +1469,7 @@ impl PhotocraftApp {
         let writable = ext.is_some_and(|e| {
             matches!(e.as_str(), photocraft_format::EXTENSION | "psd" | "psb" | "tif" | "tiff")
                 || (e == "ora" && holds_ora)
-                || (flat && photocraft_codecs::from_extension(&e).is_some_and(|f| f.caps().write))
+                || (flat && (photocraft_codecs::from_extension(&e).is_some_and(|f| f.caps().write) || (st.doc.stereo && matches!(e.as_str(), "mpo" | "jps"))))
         });
         let suggested = match &st.path {
             Some(p) if writable => p.clone(),
@@ -1572,7 +1572,9 @@ impl PhotocraftApp {
             let flat_own = |p: &str| {
                 !photocraft_engine::file_cmds::saves_in_place(p)
                     && plain_raster(&st.doc).is_some()
-                    && photocraft_engine::file_cmds::extension(p).is_some_and(|e| photocraft_codecs::from_extension(&e).is_some_and(|f| f.caps().write))
+                    && photocraft_engine::file_cmds::extension(p).is_some_and(|e| {
+                        photocraft_codecs::from_extension(&e).is_some_and(|f| f.caps().write) || (st.doc.stereo && matches!(e.as_str(), "mpo" | "jps"))
+                    })
             };
             let path = st.path.clone().filter(|p| photocraft_engine::file_cmds::holds_at(&st.doc, p) || flat_own(p)).ok_or(
                 "Save writes back only to the document's own PSD, PSB, .pcraft or OpenRaster file (OpenRaster only when it holds everything), or to its own flat file while the document is a single plain layer",
