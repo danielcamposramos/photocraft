@@ -266,10 +266,14 @@ fn jps_descriptor_layouts() {
     assert_eq!(pair.dimensions(), (128, 96));
     let (le, re) = (mean(&pair, 0, 64), mean(&pair, 64, 128));
     assert!(le[0] > 180 && re[0] < 70, "left {le:?} right {re:?}");
-    // monoscopic and anaglyph descriptors: one picture for both eyes
+    // A monoscopic descriptor stays flat. Anaglyph is recognized, but must not silently
+    // become a mono document or claim to recover the missing colour channels.
     let flat = jpeg(&l);
     assert_eq!(stereo::layout(&with_descriptor(&flat, 0x0000_0000), true), None);
-    assert_eq!(stereo::layout(&with_descriptor(&flat, 0x0004_0401), true), None);
+    let anaglyph = with_descriptor(&flat, 0x0004_0401);
+    let layout = stereo::layout(&anaglyph, true).unwrap();
+    assert_eq!(layout, StereoLayout::Anaglyph { red: FirstEye::Left });
+    assert!(matches!(stereo::decode_pair(&anaglyph, &layout, &DecodeOptions::default()), Err(photocraft_codecs::CodecError::Unsupported { .. })));
 }
 
 // --- PNG sTER (PNG Extensions 1.4.0 §3.6) ---------------------------------------------------------
@@ -324,7 +328,7 @@ fn png_ster_modes_and_padding() {
 
 #[test]
 fn sixteen_bit_and_alpha_png_pairs_keep_their_samples() {
-    // a 16-bit RGBA pair with 4-pixel eyes (the writer adds 3 padding columns): every sample comes
+    // a 16-bit RGBA pair with 4-pixel eyes (the writer adds 4 padding columns): every sample comes
     // back unchanged
     let px = |x: u16| if x < 4 { [60000u16, 0, 5535, 40000] } else { [1000, 30000, 64535, 65535] };
     let samples: Vec<u16> = (0..2).flat_map(|_| (0..8u16).flat_map(px)).collect();
@@ -426,6 +430,33 @@ fn png_written_and_read_back() {
 }
 
 #[test]
+fn normalized_png_overrides_the_source_mode_and_writes_only_one_ster() {
+    for mode in [PngStereo::CrossFuse, PngStereo::DivergingFuse] {
+        let options = EncodeOptions { png_stereo: Some(mode), ..Default::default() };
+        let bytes = stereo::encode_png(&sbs(13, 8), &options).unwrap();
+        let mut offset = 8;
+        let mut marks = Vec::new();
+        while offset + 12 <= bytes.len() {
+            let len = u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+            if &bytes[offset + 4..offset + 8] == b"sTER" {
+                marks.push(bytes[offset + 8..offset + 8 + len].to_vec());
+            }
+            offset += len + 12;
+        }
+        assert_eq!(marks, vec![vec![1]], "one diverging-fuse marker for normalized pixels");
+        assert_pair(&read(&bytes, false), (13, 8), "source settings must not swap the eyes");
+    }
+}
+
+#[test]
+fn damaged_ster_is_not_used_to_rearrange_pixels() {
+    let mut bytes = with_ster(&png(&sbs(16, 8)), 1, b"IDAT");
+    let at = bytes.windows(4).position(|w| w == b"sTER").unwrap();
+    bytes[at + 8] ^= 1; // corrupt only the CRC
+    assert_eq!(stereo::layout(&bytes, false), None);
+}
+
+#[test]
 fn writers_need_a_side_by_side_pair() {
     let odd = filled(9, 4, GREEN);
     let o = EncodeOptions::default();
@@ -455,4 +486,89 @@ fn truncated_and_damaged_stereo_files_never_panic() {
             }
         }
     }
+}
+
+#[test]
+fn unsupported_jps_scaling_is_not_silently_discarded() {
+    let image = jpeg(&sbs(32, 16));
+    for descriptor in [0x0001_0201, 0x0002_0301, 0x0001_0101, 0x0002_0101, 0x0000_0901] {
+        let file = with_descriptor(&image, descriptor);
+        let layout = stereo::layout(&file, true).unwrap();
+        assert_eq!(layout, StereoLayout::UnsupportedJps { descriptor });
+        assert!(matches!(stereo::decode_pair(&file, &layout, &DecodeOptions::default()), Err(CodecError::Unsupported { .. })));
+    }
+}
+
+#[test]
+fn packed_geometry_and_expanded_limits_are_checked_before_splitting() {
+    let ordinary = png(&filled(9, 7, RED));
+    for layout in [
+        StereoLayout::SideBySide { first: FirstEye::Left, gap: 0, squeezed: false },
+        StereoLayout::OverUnder { first: FirstEye::Left, gap: 0, squeezed: false },
+        StereoLayout::Rows { first: FirstEye::Left },
+    ] {
+        assert!(stereo::decode_pair(&ordinary, &layout, &DecodeOptions::default()).is_err());
+    }
+    let packed = jpeg(&sbs(32, 16));
+    let layout = StereoLayout::SideBySide { first: FirstEye::Left, gap: 0, squeezed: true };
+    let opts = DecodeOptions { limits: Limits { max_width: 100, ..Limits::default() }, ..DecodeOptions::default() };
+    assert!(matches!(stereo::decode_pair(&packed, &layout, &opts), Err(CodecError::LimitExceeded(_))));
+}
+
+#[test]
+fn packed_exif_orientation_applies_to_each_eye_and_is_cleared() {
+    for orientation in 2u16..=8 {
+        let mut pair = picture(16, 4, |x, y| if x < 8 { [150 + (x * 3) as u8, (y * 30) as u8, 0] } else { [0, (y * 30) as u8, 150 + (x * 3) as u8] });
+        let mut metadata = exif();
+        metadata[18..20].copy_from_slice(&orientation.to_le_bytes());
+        pair.meta.exif = Some(metadata);
+        for (kind, bytes) in
+            [("PNG", stereo::encode_png(&pair, &EncodeOptions::default()).unwrap()), ("JPS", stereo::encode_jps(&pair, &EncodeOptions::default()).unwrap())]
+        {
+            let got = read(&bytes, false);
+            let (eye_w, eye_h) = if orientation >= 5 { (4, 8) } else { (8, 4) };
+            assert_eq!(got.dimensions(), (eye_w * 2, eye_h), "{kind} orientation {orientation}");
+            assert!(is_red(mean(&got, 0, eye_w)), "{kind} keeps left eye");
+            assert!(is_blue(mean(&got, eye_w, eye_w * 2)), "{kind} keeps right eye");
+            assert_eq!(exif_orientation(got.meta.exif.as_deref().unwrap()), 1);
+            let saved = stereo::encode_png(&got, &EncodeOptions::default()).unwrap();
+            let reopened = read(&saved, false);
+            assert_eq!(reopened.dimensions(), got.dimensions());
+            assert_eq!(reopened.data(), got.data(), "{kind} does not rotate twice");
+        }
+    }
+}
+
+#[test]
+fn mpo_views_with_different_icc_profiles_are_not_assigned_one_profile() {
+    let mut left = filled(64, 48, RED);
+    left.icc = Some(b"left profile".to_vec());
+    let mut right = filled(64, 48, BLUE);
+    right.icc = Some(b"different profile".to_vec());
+    let bytes = mpo(&[(&jpeg(&left), REPRESENTATIVE | DISPARITY, Some(1)), (&jpeg(&right), DISPARITY, Some(2))]);
+    let layout = stereo::layout(&bytes, false).unwrap();
+    assert!(matches!(stereo::decode_pair(&bytes, &layout, &DecodeOptions::default()), Err(CodecError::Unsupported { .. })));
+}
+
+#[test]
+fn damage_to_either_mpo_eye_is_reported() {
+    let left = jpeg(&filled(64, 48, RED));
+    let right = jpeg(&filled(64, 48, BLUE));
+    for damage_left in [false, true] {
+        let l = if damage_left { &left[..left.len() - 1] } else { &left };
+        let r = if damage_left { &right } else { &right[..right.len() - 1] };
+        let file = mpo(&[(l, REPRESENTATIVE | DISPARITY, Some(1)), (r, DISPARITY, Some(2))]);
+        assert!(!read(&file, false).warnings.is_empty(), "damage to either view must reach the importer");
+    }
+}
+
+#[test]
+fn multi_view_mpo_is_not_silently_reduced_to_two_views() {
+    let left = jpeg(&filled(64, 48, RED));
+    let middle = jpeg(&filled(64, 48, GREEN));
+    let right = jpeg(&filled(64, 48, BLUE));
+    let file = mpo(&[(&left, REPRESENTATIVE | DISPARITY, Some(1)), (&middle, DISPARITY, Some(2)), (&right, DISPARITY, Some(3))]);
+    let layout = stereo::layout(&file, false).unwrap();
+    assert!(matches!(layout, StereoLayout::UnsupportedMpo { .. }));
+    assert!(matches!(stereo::decode_pair(&file, &layout, &DecodeOptions::default()), Err(CodecError::Unsupported { .. })));
 }

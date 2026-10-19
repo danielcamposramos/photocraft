@@ -54,6 +54,19 @@ pub fn import_flat(name: &str, bytes: &[u8]) -> Result<ImportResult, IoError> {
     Ok(r)
 }
 
+/// Opens a stereo file as a full side-by-side canvas, left eye first.
+pub fn import_stereo(name: &str, bytes: &[u8], layout: &codecs::stereo::StereoLayout) -> Result<ImportResult, IoError> {
+    let img = codecs::stereo::decode_pair(bytes, layout, &codecs::DecodeOptions::default())?;
+    let mut result = image_to_document(name, &img)?;
+    result.document.stereo = true;
+    result.document.file_encoding = file_encoding(bytes);
+    if codecs::detect(bytes) == Some(Format::Png) {
+        // Pixels have been normalized, so the original cross-fuse byte no longer describes them.
+        result.document.file_encoding.png_stereo = Some(codecs::PngStereo::DivergingFuse.mode());
+    }
+    Ok(result)
+}
+
 /// Every frame of a GIF as a single-layer document, handed to `each` in order with its delay in
 /// milliseconds (a still GIF has one). One frame at a time becomes a document, so the caller
 /// can flatten and drop it. Returns the number of frames; stops at the first error `each` gives.
@@ -533,10 +546,16 @@ pub fn export_flat(doc: &Document, format: Format, opts: &ExportOptions) -> Resu
 /// [`export_flat`] reporting a coarse step through `ctl` once the composite is rendered; the
 /// encoder does the rest (#3389).
 pub(crate) fn export_flat_with(doc: &Document, format: Format, opts: &ExportOptions, ctl: &photocraft_raster::Interrupt) -> Result<ExportResult, IoError> {
-    use photocraft_cms::{Builtin, Intent};
     if let Some(r) = export_mode_specific(doc, format, opts)? {
         return Ok(r);
     }
+    let (img, warnings) = flat_image(doc, format, opts, ctl)?;
+    encode_image(&img, format, opts, warnings)
+}
+
+/// The shared, colour-managed composite for ordinary and stereo exports.
+fn flat_image(doc: &Document, format: Format, opts: &ExportOptions, ctl: &photocraft_raster::Interrupt) -> Result<(Image, Vec<String>), IoError> {
+    use photocraft_cms::{Builtin, Intent};
     let mut warnings = Vec::new();
     let cmyk_target = format.caps().layouts.iter().any(|layout| layout.is_cmyk());
     let lab_target = format.caps().layouts.iter().any(|layout| layout.is_lab());
@@ -582,7 +601,24 @@ pub(crate) fn export_flat_with(doc: &Document, format: Format, opts: &ExportOpti
     if format == Format::Tga {
         img = tga_image(doc, img, opts.tga_bits, &mut warnings)?;
     }
-    encode_image(&img, format, opts, warnings)
+    Ok((img, warnings))
+}
+
+/// Saves the normalized stereo canvas with the destination format's own marker.
+pub(crate) fn export_stereo(doc: &Document, ext: &str, opts: &ExportOptions, ctl: &photocraft_raster::Interrupt) -> Result<ExportResult, IoError> {
+    if !doc.stereo {
+        return Err(IoError::Unsupported("MPO and JPS require a stereo document".into()));
+    }
+    let format = if ext == "png" { Format::Png } else { Format::Jpeg };
+    let (img, mut warnings) = flat_image(doc, format, opts, ctl)?;
+    append_fidelity_warnings(&img, format, opts, &mut warnings)?;
+    let bytes = match ext {
+        "mpo" => codecs::stereo::encode_mpo(&img, &opts.encode)?,
+        "jps" => codecs::stereo::encode_jps(&img, &opts.encode)?,
+        "png" => codecs::stereo::encode_png(&img, &opts.encode)?,
+        _ => return Err(IoError::UnknownFormat(ext.into())),
+    };
+    Ok(ExportResult { bytes, warnings })
 }
 
 /// What Targa Options offers first, as Photoshop does: 32 bits per pixel when the document has an
@@ -673,14 +709,19 @@ fn tga_with_alpha_channel(doc: &Document, img: Image, channel: &AlphaChannel, wa
 /// every flat export, and of a layered TIFF (whose composite is a flat image to other readers),
 /// so export-wide policies on the image's metadata apply to both.
 pub(crate) fn encode_image(img: &Image, format: Format, opts: &ExportOptions, mut warnings: Vec<String>) -> Result<ExportResult, IoError> {
+    append_fidelity_warnings(img, format, opts, &mut warnings)?;
+    let bytes = codecs::encode(img, format, &opts.encode)?;
+    Ok(ExportResult { bytes, warnings })
+}
+
+fn append_fidelity_warnings(img: &Image, format: Format, opts: &ExportOptions, warnings: &mut Vec<String>) -> Result<(), IoError> {
     for w in codecs::fidelity_warnings_with(img, format, &opts.encode) {
         if w.is_fatal() {
             return Err(IoError::Unsupported(w.to_string()));
         }
         warnings.push(w.to_string());
     }
-    let bytes = codecs::encode(img, format, &opts.encode)?;
-    Ok(ExportResult { bytes, warnings })
+    Ok(())
 }
 
 /// `img` with every band of rows mapped by `f` (normalized samples in, normalized `layout`

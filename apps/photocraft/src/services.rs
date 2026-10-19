@@ -20,9 +20,9 @@ mod recovery_tests;
 /// Photoshop brushes (.abr), gradients (.grd), swatches (.aco, .ase) and keyboard shortcut sets
 /// (.kys), which go to the preset libraries and Edit › Keyboard Shortcuts.
 const OPEN_EXTS: &[&str] = &[
-    "pcraft", "pdn", "ora", "kra", "krz", "psd", "psb", "psdt", "png", "jpg", "jpeg", "tif", "tiff", "webp", "gif", "bmp", "tga", "ico", "qoi", "exr", "hdr",
-    "pbm", "pgm", "ppm", "pam", "pfm", "pcx", "dds", "xpm", "fits", "fit", "fts", "dpx", "cin", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw",
-    "arw", "pef", "orf", "rw2", "raf", "abr", "grd", "svg", "svgz", "aco", "ase", "kys", "af", "afdesign", "afphoto", "afpub",
+    "pcraft", "pdn", "ora", "kra", "krz", "psd", "psb", "psdt", "png", "jpg", "jpeg", "mpo", "jps", "tif", "tiff", "webp", "gif", "bmp", "tga", "ico", "qoi",
+    "exr", "hdr", "pbm", "pgm", "ppm", "pam", "pfm", "pcx", "dds", "xpm", "fits", "fit", "fts", "dpx", "cin", "heic", "heif", "hif", "dng", "cr2", "cr3",
+    "nef", "nrw", "arw", "pef", "orf", "rw2", "raf", "abr", "grd", "svg", "svgz", "aco", "ase", "kys", "af", "afdesign", "afphoto", "afpub",
 ];
 const SVG_EXTS: &[&str] = &["svg", "svgz"];
 
@@ -50,6 +50,8 @@ const OPEN_FILTERS: &[(&str, &[&str])] = &[
     ("SVG", SVG_EXTS),
     ("PNG", &["png"]),
     ("JPEG", &["jpg", "jpeg"]),
+    ("MPO (stereo pair)", &["mpo"]),
+    ("JPS (stereo pair)", &["jps"]),
     ("HEIF", &["heic", "heif", "hif"]),
     ("TIFF", &["tif", "tiff"]),
     ("WebP", &["webp"]),
@@ -89,6 +91,8 @@ const SAVE_FILTERS: &[(&str, &[&str])] = &[
     ("OpenRaster", &["ora"]),
     ("PNG", &["png"]),
     ("JPEG", &["jpg"]),
+    ("MPO (stereo pair)", &["mpo"]),
+    ("JPS (stereo pair)", &["jps"]),
     ("WebP", &["webp"]),
     ("TIFF", &["tif"]),
     ("Targa", &["tga"]),
@@ -884,8 +888,8 @@ mod tests {
     /// Every flat format Save As offers is one PhotoCraft writes, and ICO is among them (#4357).
     #[test]
     fn save_as_offers_only_writable_formats_including_ico() {
-        // Layered formats, and PDF, are written by `photocraft-io`, not a codec.
-        let layered = ["psd", "psb", "pcraft", "ora", "pdf"];
+        // These containers, including stereo pairs, are dispatched by `photocraft-io`.
+        let layered = ["psd", "psb", "pcraft", "ora", "pdf", "mpo", "jps"];
         for (name, exts) in SAVE_FILTERS {
             for ext in exts.iter().filter(|e| !layered.contains(e)) {
                 let format = photocraft_codecs::from_extension(ext).unwrap_or_else(|| panic!("{name}: .{ext} is no known format"));
@@ -907,6 +911,19 @@ mod tests {
         assert_eq!(icon.bytes[..4], [0, 0, 1, 0], "an ICO header");
         let err = photocraft_io::export(&doc(300), "icon.ico", &opts).map(|_| ()).unwrap_err().to_string();
         assert!(err.contains("256"), "{err}");
+    }
+
+    #[test]
+    fn stereo_save_filters_select_writable_pair_containers() {
+        let mut doc = Document::new("pair", Size::new(16, 8), ColorMode::Rgb, SampleType::U8);
+        doc.stereo = true;
+        for (ext, label) in [("mpo", "MPO (stereo pair)"), ("jps", "JPS (stereo pair)")] {
+            let path = format!("pair.{ext}");
+            assert_eq!(save_filters(&path)[0].0, label);
+            assert!(OPEN_FILTERS.iter().any(|(name, exts)| *name == label && exts.contains(&ext)));
+            let saved = photocraft_io::export(&doc, &path, &photocraft_io::ExportOptions::default()).unwrap();
+            assert!(photocraft_io::import(&path, &saved.bytes).unwrap().document.stereo);
+        }
     }
 
     /// #4394: with File name extensions shown, Windows kept `image.psd` when the type was changed to

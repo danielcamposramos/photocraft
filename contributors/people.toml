@@ -172,3 +172,7 @@ sync_github_name = false
 
 [people.Byxis]
 sync_github_name = true
+
+[people.danielcamposramos]
+real_name = "Daniel Campos Ramos"
+sync_github_name = true
