@@ -272,3 +272,26 @@ fn unconfirmed_download_names_the_document_but_keeps_it_unsaved() {
     app.save_as(Some("download.psd".into())).unwrap();
     assert!(!app.has_unsaved_work());
 }
+
+#[test]
+fn layered_stereo_defaults_to_native_and_unmarked_exports_stay_copies() {
+    let mut app = app();
+    let st = app.session.active_mut().unwrap();
+    std::sync::Arc::make_mut(&mut st.doc).stereo = true;
+    st.path = Some("pair.jps".into());
+    let before = identity(&app);
+    let (dialog, requests) = crate::file_dialog::fake(vec![None]);
+    app.services.file_dialog = Some(dialog);
+    app.save_as(None).unwrap();
+    let ctx = egui::Context::default();
+    app.poll_file_dialog(&ctx, None);
+    assert!(matches!(&requests.borrow()[0], crate::file_dialog::FileDialogRequest::Save { suggested } if suggested.ends_with("pair.pcraft")));
+    for path in ["copy.psd", "copy.psb", "copy.ora", "copy.jpg"] {
+        let result = app.save_as(Some(path.into())).unwrap();
+        assert!(result["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("stereo metadata")), "{path}");
+        assert_eq!(identity(&app), before, "{path} cannot mark the stereo document saved");
+    }
+    app.save_as(Some("pair.pcraft".into())).unwrap();
+    assert_eq!(app.session.active().unwrap().path.as_deref(), Some("pair.pcraft"));
+    assert!(!app.session.active().unwrap().is_dirty());
+}
