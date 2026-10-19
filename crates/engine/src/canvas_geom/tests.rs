@@ -264,6 +264,28 @@ fn canvas_size_and_crop_move_vector_geometry() {
 }
 
 #[test]
+fn guide_colours_follow_their_guides() {
+    const MAGENTA: [u8; 3] = [255, 0, 255];
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": W, "height": H})).unwrap();
+    s.execute("view.newGuide", json!({"orientation": "vertical", "position": 20, "color": "#ff00ff"})).unwrap();
+    s.execute("view.newGuide", json!({"orientation": "vertical", "position": 30})).unwrap();
+    // Crop shifts both guides by 10: the colour goes with the guide at 20, not to the one now there.
+    s.execute("image.crop", json!({"x": 10, "y": 0, "width": W - 10, "height": H})).unwrap();
+    let g = &doc(&s).guides;
+    assert_eq!(g.vertical, vec![10.0, 20.0]);
+    assert_eq!((g.color(true, 10.0), g.color(true, 20.0)), (Some(MAGENTA), None));
+    // A quarter turn makes it a horizontal guide at y = 10, still magenta.
+    s.execute("image.imageRotation.90cw", json!({})).unwrap();
+    let g = &doc(&s).guides;
+    assert_eq!(g.horizontal, vec![10.0, 20.0]);
+    assert_eq!((g.color(false, 10.0), g.color(true, 10.0)), (Some(MAGENTA), None));
+    // An arbitrary angle drops the guides, so their colours go too.
+    s.execute("image.rotation.arbitrary", json!({"angle": 33})).unwrap();
+    assert!(doc(&s).guides.colors.is_empty());
+}
+
+#[test]
 fn image_size_scales_vector_geometry() {
     let mut s = mixed(8, "rgb");
     let (t0, k0) = type_and_shape_origin(doc(&s));

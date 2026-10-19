@@ -174,6 +174,7 @@ fn every_mapped_command_exports_and_imports_back() {
         ("filter.noise.addNoise", json!({"amount": 12.5, "distribution": "gaussian", "monochromatic": true, "seed": 7})),
         ("filter.noise.median", json!({"radius": 2})),
         ("filter.blur.motionBlur", json!({"angle": 45, "distance": 20})),
+        ("filter.blur.smartBlur", json!({"radius": 2.5, "threshold": 40, "quality": "medium", "mode": "overlayEdge"})),
         ("filter.other.offset", json!({"horizontal": 10, "vertical": -5, "undefinedAreas": "wrap"})),
         ("filter.blur.blur", json!({})),
         (
@@ -416,7 +417,6 @@ fn every_mapped_command_exports_and_imports_back() {
         "filter.blur.blurMore",
         "filter.blur.boxBlur",
         "filter.blur.radialBlur",
-        "filter.blur.smartBlur",
         "filter.blur.surfaceBlur",
         "filter.noise.despeckle",
         "filter.noise.dustAndScratches",
@@ -1037,6 +1037,73 @@ fn remove_white_clears_the_targeted_layer_not_the_converted_background() {
     assert!(bottom.surface().unwrap().sample_channel(2, 2, 1) > 0.99, "and kept its pixels");
 }
 
+/// Smart Blur's quality uses Photoshop's `SmBQ` codes (`SBQL`/`SBQM`/`SBQH`): measured in
+/// Photoshop, the old `Hgh `/`Mdm `/`Low ` play back as its fallback quality. Old codes still read.
+#[test]
+fn smart_blur_quality_uses_photoshop_codes() {
+    let smart_blur =
+        |quality: D, mode: &str| desc("null").with("Rds ", D::Double(6.0)).with("Thsh", D::Double(60.0)).with("SmBQ", quality).with("SmBM", enm("SmBM", mode));
+    // Every quality writes Photoshop's code, as a double radius/threshold and both enums,
+    // and reads back as the same step.
+    for (quality, code) in [("low", "SBQL"), ("medium", "SBQM"), ("high", "SBQH")] {
+        let params = json!({"radius": 6, "threshold": 60, "quality": quality, "mode": "edgeOnly"});
+        let a = Action::new("Q", vec![("filter.blur.smartBlur".into(), params.clone())]);
+        let (bytes, skipped) = export("S", &[&a], &[], false).unwrap();
+        assert!(skipped.is_empty());
+        let file = atn::parse(&bytes).unwrap();
+        let it = &file.actions[0].items[0];
+        assert_eq!(it.event.id(), "SmrB");
+        assert_eq!(it.descriptor.as_ref(), Some(&smart_blur(enm("SmBQ", code), "SBME")), "{quality}");
+        let back = import(&bytes).unwrap();
+        assert!(back.unsupported.is_empty(), "{quality}");
+        assert_eq!(back.actions[0].steps, vec![("filter.blur.smartBlur".to_string(), params)]);
+    }
+
+    // Photoshop-shaped steps (each quality and mode, as Photoshop stores them) and the codes
+    // PhotoCraft wrote before this fix read as the right quality.
+    let cases = [
+        ("SBQH", "SBMN", "high", "normal"),
+        ("SBQM", "SBMO", "medium", "overlayEdge"),
+        ("SBQL", "SBME", "low", "edgeOnly"),
+        ("Hgh ", "SBMN", "high", "normal"),
+        ("Mdm ", "SBMN", "medium", "normal"),
+        ("Low ", "SBMN", "low", "normal"),
+    ];
+    let items = cases.iter().map(|(q, m, _, _)| item("SmrB", "Smart Blur", Some(smart_blur(enm("SmBQ", q), m)))).collect();
+    let data = set_of("Blurs", vec![("Smart", items)]);
+    let mut s = Session::new();
+    s.execute("actions.load", json!({"data": data})).unwrap();
+    let steps = &s.actions.list[0].steps;
+    for ((q, _, quality, mode), (id, p)) in cases.iter().zip(steps) {
+        assert_eq!(id, "filter.blur.smartBlur", "{q}");
+        assert_eq!(p, &json!({"radius": 6, "threshold": 60, "quality": quality, "mode": mode}), "{q}");
+    }
+
+    // An unknown code, a quality of the wrong type, NaN and a missing quality never panic: the
+    // unknown ones stay Photoshop steps, kept verbatim.
+    let odd = [
+        smart_blur(enm("SmBQ", "Xxxx"), "SBMN"),
+        smart_blur(D::Integer(2), "SBMN"),
+        smart_blur(enm("SmBQ", "SBQH"), "Xxxx"),
+        desc("null").with("Rds ", D::Double(f64::NAN)).with("SmBQ", enm("SmBQ", "SBQM")),
+        desc("null"),
+    ];
+    let items: Vec<AtnItem> = odd.iter().map(|d| item("SmrB", "Smart Blur", Some(d.clone()))).collect();
+    let imported = import(&photocraft_paint::tile::b64_decode(&set_of("Odd", vec![("Odd", items)])).unwrap()).unwrap();
+    let steps = &imported.actions[0].steps;
+    assert_eq!(steps.len(), odd.len());
+    assert_eq!(steps[0].0, PHOTOSHOP_STEP, "an unknown quality is kept verbatim");
+    assert_eq!(steps[2].0, PHOTOSHOP_STEP, "an unknown mode is kept verbatim");
+    assert_eq!(imported.unsupported.iter().map(|u| u.step).collect::<Vec<_>>(), [0, 2]);
+    // A wrong-type quality is left out (the filter's default applies), as for every enum field.
+    assert_eq!(steps[1], ("filter.blur.smartBlur".to_string(), json!({"radius": 6, "threshold": 60, "mode": "normal"})));
+    // An unknown quality or a non-string one is not exported.
+    for bad in [json!({"quality": "best"}), json!({"quality": 3}), json!({"radius": "x"})] {
+        let a = Action::new("Bad", vec![("filter.blur.smartBlur".into(), bad.clone())]);
+        assert!(export("S", &[&a], &[], false).is_err(), "{bad}");
+    }
+}
+
 /// #5830: Shadows/Highlights (`adaptCorrect`) recorded by Photoshop, with string IDs, plays as
 /// Image › Adjustments › Shadows/Highlights instead of stopping as a step with no equivalent.
 #[test]
@@ -1132,6 +1199,25 @@ fn fractional_translation_only_transform_keeps_offset_and_interpolation() {
     assert_eq!(steps[0].1.get("interpolation"), Some(&json!("bilinear")));
 }
 
+/// Arbitrary canvas rotation must keep its interpolation through a strict export: dropping it
+/// silently replays the rotation with the default bicubic resampling.
+#[test]
+fn arbitrary_rotation_keeps_interpolation_through_atn() {
+    for params in [
+        json!({"angle": 17, "direction": "ccw", "interpolation": "nearest"}),
+        json!({"angle": 17, "direction": "ccw", "interpolation": "bilinear"}),
+        json!({"angle": 17, "direction": "ccw", "interpolation": "bicubic"}),
+        json!({"angle": 17, "direction": "ccw"}),
+    ] {
+        let a = Action { name: "Rot".into(), steps: vec![("image.rotation.arbitrary".into(), params.clone())], ..Default::default() };
+        let (bytes, skipped) = export("Rot", &[&a], &[], false).unwrap();
+        assert!(skipped.is_empty());
+        let imported = import(&bytes).unwrap();
+        assert!(imported.unsupported.is_empty());
+        assert_eq!(imported.actions[0].steps, vec![("image.rotation.arbitrary".to_string(), params)]);
+    }
+}
+
 /// A filter recorded against a layer mask must not export as a plain filter that edits the
 /// layer's pixels on replay: Photoshop's descriptor has no field for PhotoCraft's `target`.
 #[test]
@@ -1151,4 +1237,49 @@ fn add_noise_with_mask_target_is_not_exported_as_pixel_filter() {
         let imported = import(&bytes).unwrap();
         assert_eq!(imported.actions[0].steps, vec![("filter.noise.addNoise".to_string(), json!({"amount": 75, "seed": 123}))]);
     }
+}
+
+/// A Play Action that starts the called action at a later step must not export as a call of the
+/// whole action: that would replay the steps the recording deliberately skipped.
+#[test]
+fn partial_play_action_is_not_exported_as_whole_action_call() {
+    let partial = Action { name: "Parent".into(), steps: vec![("actions.play".into(), json!({"action": "Child", "from": 1}))], ..Default::default() };
+    assert!(export("Set", &[&partial], &[], false).is_err());
+    let (_, skipped) = export("Set", &[&partial], &[], true).unwrap();
+    assert_eq!(skipped, vec![Skipped { action: "Parent".into(), step: 0, id: "actions.play".into() }]);
+    for params in [json!({"action": "Child"}), json!({"action": "Child", "from": 0})] {
+        let whole = Action { name: "Parent".into(), steps: vec![("actions.play".into(), params)], ..Default::default() };
+        let (bytes, skipped) = export("Set", &[&whole], &[], false).unwrap();
+        assert!(skipped.is_empty());
+        let imported = import(&bytes).unwrap();
+        assert_eq!(imported.actions[0].steps, vec![("actions.play".to_string(), json!({"action": "Child"}))]);
+    }
+}
+
+/// #7646: an action's function key keeps Photoshop's Shift and Command options through
+/// `.atn` load and save, as `Shift+F5`, `Cmd+F5` and `Cmd+Shift+F5` shortcuts.
+#[test]
+fn function_keys_keep_shift_and_command() {
+    let mut file = sample();
+    file.actions[1].function_key = 5;
+    file.actions[1].shift = true;
+    file.actions[1].command = true;
+    file.actions[0].shift = true;
+    let mut s = Session::new();
+    let r = s.execute("actions.load", json!({"data": b64(&atn::write(&file).unwrap())})).unwrap();
+    assert_eq!(r["functionKeys"], json!([{"action": "Soften", "key": "Shift+F3"}, {"action": "Finish", "key": "Cmd+Shift+F5"}]));
+    let shortcuts = &s.prefs().shortcuts;
+    assert_eq!(shortcuts.get("actions.play:Soften").map(String::as_str), Some("Shift+F3"));
+    assert_eq!(shortcuts.get("actions.play:Finish").map(String::as_str), Some("Cmd+Shift+F5"));
+    let r = s.execute("actions.save", json!({"set": "Test Set"})).unwrap();
+    let saved = atn::parse(&photocraft_paint::tile::b64_decode(r["data"].as_str().unwrap()).unwrap()).unwrap();
+    let keys: Vec<_> = saved.actions.iter().map(|a| (a.function_key, a.shift, a.command)).collect();
+    assert_eq!(keys, [(3, true, false), (5, true, true)]);
+
+    assert_eq!(super::parse_function_key("Cmd+F12"), Some((12, false, true)));
+    assert_eq!(super::parse_function_key("Shift+Cmd+F2"), Some((2, true, true)));
+    for bad in ["F16", "F0", "Alt+F2", "Cmd+Cmd+F2", "Shift+", "Cmd+K", ""] {
+        assert_eq!(super::parse_function_key(bad), None, "{bad}");
+    }
+    assert_eq!(super::function_key_name(7, false, false), "F7");
 }

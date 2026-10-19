@@ -922,7 +922,10 @@ const STROKE_LOCATION: &[(&str, &str)] = &[("Insd", "inside"), ("Cntr", "center"
 const INTENT: &[(&str, &str)] = &[("Img ", "perceptual"), ("Clrm", "relative"), ("Grp ", "saturation"), ("AbsC", "absolute")];
 const PROFILES: &[(&str, &str)] =
     &[("sRGB IEC61966-2.1", "srgb"), ("Display P3", "display-p3"), ("Adobe RGB (1998)", "adobe-rgb-compat"), ("ProPhoto RGB", "prophoto-compat")];
-const SMART_BLUR_QUALITY: &[(&str, &str)] = &[("Hgh ", "high"), ("Mdm ", "medium"), ("Low ", "low")];
+/// Smart Blur quality. Photoshop's codes come first, so they are what an export writes (measured in
+/// Photoshop: `Hgh `/`Mdm `/`Low ` play back as its fallback, low quality). The old codes after
+/// them still read, for actions PhotoCraft wrote before.
+const SMART_BLUR_QUALITY: &[(&str, &str)] = &[("SBQL", "low"), ("SBQM", "medium"), ("SBQH", "high"), ("Hgh ", "high"), ("Mdm ", "medium"), ("Low ", "low")];
 const SMART_BLUR_MODE: &[(&str, &str)] = &[("SBMN", "normal"), ("SBME", "edgeOnly"), ("SBMO", "overlayEdge")];
 const RADIAL_METHOD: &[(&str, &str)] = &[("Spn ", "spin"), ("Zm  ", "zoom")];
 const RADIAL_QUALITY: &[(&str, &str)] = &[("Drft", "draft"), ("Gd  ", "good"), ("Bst ", "best")];
@@ -1981,6 +1984,10 @@ fn play_from(d: &Descriptor) -> Mapped {
 
 fn play_to(_: &str, p: &Value) -> Option<Descriptor> {
     let name = jstr(p, "action")?;
+    // The Play Action descriptor written here carries no starting step, so a call from a later step is not a whole call.
+    if p.get("from").is_some_and(|v| !v.is_null() && v.as_f64() != Some(0.0)) {
+        return None;
+    }
     let mut items = vec![ReferenceItem::Name { class: class("Actn"), name: UnicodeString::new_nul(name) }];
     if let Some(set) = jstr(p, "set") {
         items.push(ReferenceItem::Name { class: class("ASet"), name: UnicodeString::new_nul(set) });
@@ -2132,7 +2139,11 @@ fn rotate_from(d: &Descriptor) -> Mapped {
     } else if targets_layer(d) {
         return Mapped::Unsupported { harmless: false };
     } else {
-        return step("image.rotation.arbitrary", json!({"angle": angle.abs(), "direction": if angle < 0.0 { "ccw" } else { "cw" }}));
+        let mut p = json!({"angle": angle.abs(), "direction": if angle < 0.0 { "ccw" } else { "cw" }});
+        if let Some(i) = get_enum(d, "Intr").and_then(|i| lookup(INTERPOLATION, &i)).filter(|i| matches!(*i, "bicubic" | "bilinear" | "nearest")) {
+            p["interpolation"] = i.into();
+        }
+        return step("image.rotation.arbitrary", p);
     };
     none(if targets_layer(d) { layer } else { doc })
 }
@@ -2152,7 +2163,20 @@ fn rotate_to(id: &str, p: &Value) -> Option<Descriptor> {
     if layer {
         d = d.with("null", target_ref("Lyr "));
     }
-    Some(d.with("Angl", ang(angle)))
+    d = d.with("Angl", ang(angle));
+    if id == "image.rotation.arbitrary"
+        && let Some(i) = p.get("interpolation")
+    {
+        // The command resamples with nearest, bilinear or bicubic; any other value can't be
+        // carried faithfully, so refuse rather than replay with a different interpolation.
+        let i = match i.as_str()? {
+            "nearestNeighbor" => "nearest",
+            i @ ("bicubic" | "bilinear" | "nearest") => i,
+            _ => return None,
+        };
+        d = d.with("Intr", enm("Intp", lookup_back(INTERPOLATION, i)?));
+    }
+    Some(d)
 }
 
 fn flip_from(d: &Descriptor) -> Mapped {
@@ -3120,8 +3144,8 @@ pub fn import(bytes: &[u8]) -> std::result::Result<Imported, String> {
     let mut out = Imported { set: set.clone(), warnings: file.warnings.clone(), ..Default::default() };
     for a in &file.actions {
         let action = convert_action(a, &set, &mut out.unsupported);
-        if a.function_key > 0 && !a.shift && !a.command {
-            out.function_keys.push((action.name.clone(), format!("F{}", a.function_key)));
+        if a.function_key > 0 {
+            out.function_keys.push((action.name.clone(), function_key_name(a.function_key, a.shift, a.command)));
         }
         out.actions.push(action);
     }
@@ -3160,8 +3184,32 @@ fn export_item(id: &str, params: &Value, set: &str) -> Option<AtnItem> {
     Some(AtnItem { event, dictionary: e.label.to_string(), descriptor: Some(descriptor), ..Default::default() })
 }
 
+/// An action's key as a shortcut string: `F5`, with Photoshop's Shift and Command options
+/// `Shift+F5`, `Cmd+F5` or `Cmd+Shift+F5` (#7646).
+pub fn function_key_name(key: u16, shift: bool, command: bool) -> String {
+    format!("{}{}F{key}", if command { "Cmd+" } else { "" }, if shift { "Shift+" } else { "" })
+}
+
+/// The `.atn` function key (1…15), Shift and Command of a shortcut string, or `None` for
+/// anything else.
+pub fn parse_function_key(key: &str) -> Option<(u16, bool, bool)> {
+    let (mut shift, mut command) = (false, false);
+    let mut rest = key;
+    loop {
+        if let Some(r) = rest.strip_prefix("Cmd+").filter(|_| !command) {
+            (command, rest) = (true, r);
+        } else if let Some(r) = rest.strip_prefix("Shift+").filter(|_| !shift) {
+            (shift, rest) = (true, r);
+        } else {
+            break;
+        }
+    }
+    let n = rest.strip_prefix('F')?.parse::<u16>().ok().filter(|n| (1..=15).contains(n))?;
+    Some((n, shift, command))
+}
+
 /// The `.atn` bytes of `actions` as the set `set`. `function_keys` gives each action's key
-/// (`F1`…`F15`). Steps with no Photoshop equivalent are an error unless `skip_unsupported`.
+/// (`F1`…`F15`, with `Shift+` and `Cmd+` as [`function_key_name`] writes them). Steps with no Photoshop equivalent are an error unless `skip_unsupported`.
 pub fn export(
     set: &str,
     actions: &[&Action],
@@ -3172,11 +3220,8 @@ pub fn export(
     let mut file = AtnFile { name: UnicodeString::new_nul(set), expanded: true, actions: Vec::new(), warnings: Vec::new() };
     for a in actions {
         let mut out = AtnAction { name: UnicodeString::new_nul(&a.name), expanded: false, ..Default::default() };
-        if let Some((_, key)) = function_keys.iter().find(|(n, _)| n == &a.name)
-            && let Some(n) = key.strip_prefix('F').and_then(|n| n.parse::<u16>().ok())
-            && (1..=15).contains(&n)
-        {
-            out.function_key = n;
+        if let Some((n, shift, command)) = function_keys.iter().find(|(n, _)| n == &a.name).and_then(|(_, key)| parse_function_key(key)) {
+            (out.function_key, out.shift, out.command) = (n, shift, command);
         }
         for (i, (id, params)) in a.steps.iter().enumerate() {
             let Some(mut item) = export_item(id, params, set) else {

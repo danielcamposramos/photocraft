@@ -156,15 +156,24 @@ pub(crate) fn transform_doc_marks(doc: &mut Document, a: &Affine) {
     if m1.abs() < EPS && m2.abs() < EPS {
         g.horizontal.iter_mut().for_each(|y| *y = m3 * *y + ty);
         g.vertical.iter_mut().for_each(|x| *x = m0 * *x + tx);
+        // Colours are keyed by exact position, so they move by the same expressions.
+        for c in &mut g.colors {
+            c.position = if c.vertical { m0 * c.position + tx } else { m3 * c.position + ty };
+        }
     } else if m0.abs() < EPS && m3.abs() < EPS {
         // A horizontal guide at y becomes a vertical one at x' = m2·y + tx, and vice versa.
         let v: Vec<f64> = g.horizontal.iter().map(|y| m2 * y + tx).collect();
         let h: Vec<f64> = g.vertical.iter().map(|x| m1 * x + ty).collect();
         g.horizontal = h;
         g.vertical = v;
+        for c in &mut g.colors {
+            c.position = if c.vertical { m1 * c.position + ty } else { m2 * c.position + tx };
+            c.vertical = !c.vertical;
+        }
     } else {
         g.horizontal.clear();
         g.vertical.clear();
+        g.colors.clear();
     }
 }
 

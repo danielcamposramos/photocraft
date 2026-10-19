@@ -297,7 +297,7 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
 
 /// Per-user settings directory: `PHOTOCRAFT_CONFIG_DIR`, else `<exe dir>/PhotoCraftData` in
 /// portable mode, else the platform convention. Everything the app persists lives under it
-/// except, on Windows, crash-recovery autosaves; see [`crate::app_dirs`].
+/// except, on Windows and Linux, crash-recovery autosaves; see [`crate::app_dirs`].
 pub fn config_dir() -> Option<PathBuf> {
     crate::app_dirs::config_dir()
 }
@@ -312,8 +312,9 @@ pub fn presets_dir() -> Option<PathBuf> {
     config_dir().map(|d| d.join("Presets"))
 }
 
-/// Crash-recovery autosaves: under the settings directory, except on Windows, where they stay
-/// out of the roaming profile (see [`crate::app_dirs::recovery_dir`]).
+/// Crash-recovery autosaves: under the settings directory, except where that is synced with the
+/// settings: the Windows roaming profile and the Linux config folder (see
+/// [`crate::app_dirs::resolve_recovery`]).
 fn recovery_dir() -> Option<PathBuf> {
     crate::app_dirs::recovery_dir()
 }
