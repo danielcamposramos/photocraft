@@ -93,6 +93,8 @@ fn step(app: &mut PhotocraftApp, ctx: &egui::Context, host: &mut dyn StereoViewH
     }
     if app.stereo_view.opened && !host.is_open() {
         // the user closed the window: the menu entry goes off with it
+        // Release the closed native handle so the next toggle can create a new window.
+        host.close();
         app.stereo_view.wanted = false;
         app.stereo_view.opened = false;
         app.stereo_view.shown = None;

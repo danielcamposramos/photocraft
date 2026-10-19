@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 struct Log {
     /// (width, height, buffer length, stereo, first pixel) of every picture shown
     shown: Vec<(usize, usize, usize, bool, [u8; 4])>,
+    allocated: bool,
     open: bool,
     closes: usize,
 }
@@ -28,9 +29,13 @@ struct Recorder(Arc<Mutex<Log>>);
 impl StereoViewHost for Recorder {
     fn show(&mut self, frame: StereoFrame) -> Result<(), String> {
         let mut log = self.0.lock().unwrap();
+        if log.allocated && !log.open {
+            return Err("the native window handle was not released".into());
+        }
         let first = [frame.rgba[0], frame.rgba[1], frame.rgba[2], frame.rgba[3]];
         log.shown.push((frame.width, frame.height, frame.rgba.len(), frame.stereo, first));
         log.open = true;
+        log.allocated = true;
         Ok(())
     }
     fn is_open(&self) -> bool {
@@ -39,6 +44,7 @@ impl StereoViewHost for Recorder {
     fn close(&mut self) {
         let mut log = self.0.lock().unwrap();
         log.open = false;
+        log.allocated = false;
         log.closes += 1;
     }
 }
@@ -141,7 +147,7 @@ fn the_window_gets_the_canvas_as_one_stereo_picture_while_it_is_on() {
 }
 
 #[test]
-fn closing_the_window_turns_the_command_off() {
+fn closing_the_window_turns_the_command_off_and_allows_reopening() {
     let mut d = Driver::new(true);
     d.open("Pair", 128, 36, true, "#336699");
     d.invoke("view.stereoView").unwrap();
@@ -152,6 +158,11 @@ fn closing_the_window_turns_the_command_off() {
     let n = d.shown();
     d.frames(30);
     assert_eq!(d.shown(), n, "a closed window gets no pictures");
+
+    d.invoke("view.stereoView").unwrap();
+    assert_eq!(d.item().1, Some(true));
+    assert_eq!(d.shown(), n + 1, "reopening sends the unchanged picture to a new window");
+    assert_eq!(d.log.lock().unwrap().closes, 1, "the closed native handle was released");
 }
 
 #[test]
