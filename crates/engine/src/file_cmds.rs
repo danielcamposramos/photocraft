@@ -168,11 +168,14 @@ pub fn layered_extension(ext: &str) -> bool {
 }
 
 /// Whether a file in format `ext` (lower-case) holds the whole of `doc`, so it can be the
-/// document's own file: PSD, PSB and .pcraft always; OpenRaster only when it drops nothing (no
+/// document's own file: .pcraft always; PSD/PSB except stereo metadata; OpenRaster only when it drops nothing (no
 /// adjustment layers, styles, masks…, [`photocraft_io::ora_losses`]). A save to a format that
 /// doesn't hold the document is a copy, and File › Save goes through Save As, so an editable
 /// original is never overwritten with less than it had (#3806).
 pub fn holds(doc: &photocraft_doc::Document, ext: &str) -> bool {
+    if photocraft_io::stereo_metadata_loss(doc, ext).is_some() {
+        return false;
+    }
     match ext {
         "psd" | "psb" | "pcraft" => true,
         "ora" => photocraft_io::ora_losses(doc).is_empty(),
@@ -186,12 +189,16 @@ pub fn holds_at(doc: &photocraft_doc::Document, path: &str) -> bool {
 }
 
 /// What a save of `doc` to `path` would leave out when its format can't hold it: OpenRaster's
-/// [`photocraft_io::ora_losses`]; empty for other formats.
+/// [`photocraft_io::ora_losses`] and stereo metadata for formats that cannot retain it.
 pub fn losses_at(doc: &photocraft_doc::Document, path: &str) -> Vec<String> {
-    match extension(path).as_deref() {
+    let mut losses = match extension(path).as_deref() {
         Some("ora") => photocraft_io::ora_losses(doc),
         _ => Vec::new(),
+    };
+    if let Some(loss) = photocraft_io::stereo_metadata_loss(doc, path) {
+        losses.push(loss.into());
     }
+    losses
 }
 
 /// Whether `path` names a document template (.psdt). A template opens as a new untitled document

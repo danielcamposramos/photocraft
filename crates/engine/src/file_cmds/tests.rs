@@ -1376,3 +1376,16 @@ fn batch_folder_includes_stereo_pairs_case_insensitively() {
     }
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn stereo_documents_need_native_storage_to_retain_their_editable_identity() {
+    let mut doc = Document::new("pair", photocraft_doc::Size::new(16, 8), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
+    doc.stereo = true;
+    assert!(holds_at(&doc, "pair.pcraft"));
+    assert!(losses_at(&doc, "pair.pcraft").is_empty());
+    for ext in ["psd", "psb", "ora", "tiff", "jpg"] {
+        let path = format!("pair.{ext}");
+        assert!(!holds_at(&doc, &path), "{ext}");
+        assert!(losses_at(&doc, &path).iter().any(|w| w.contains("stereo metadata")), "{ext}");
+    }
+}
