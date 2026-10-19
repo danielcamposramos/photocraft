@@ -515,21 +515,65 @@ fn packed_geometry_and_expanded_limits_are_checked_before_splitting() {
     assert!(matches!(stereo::decode_pair(&packed, &layout, &opts), Err(CodecError::LimitExceeded(_))));
 }
 
+/// Insert EXIF after encoding: the ordinary writers deliberately reset orientation to 1.
+fn with_packed_exif(bytes: &[u8], metadata: &[u8], png: bool) -> Vec<u8> {
+    if png {
+        let at = bytes.windows(4).position(|w| w == b"IDAT").unwrap() - 4;
+        let mut chunk = (metadata.len() as u32).to_be_bytes().to_vec();
+        let mut body = b"eXIf".to_vec();
+        body.extend_from_slice(metadata);
+        let mut crc = flate2::Crc::new();
+        crc.update(&body);
+        chunk.extend_from_slice(&body);
+        chunk.extend_from_slice(&crc.sum().to_be_bytes());
+        [&bytes[..at], &chunk, &bytes[at..]].concat()
+    } else {
+        let mut segment = vec![0xff, 0xe1];
+        segment.extend_from_slice(&((metadata.len() + 8) as u16).to_be_bytes());
+        segment.extend_from_slice(b"Exif\0\0");
+        segment.extend_from_slice(metadata);
+        after_soi(bytes, &segment)
+    }
+}
+
 #[test]
 fn packed_exif_orientation_applies_to_each_eye_and_is_cleared() {
     for orientation in 2u16..=8 {
-        let mut pair = picture(16, 4, |x, y| if x < 8 { [150 + (x * 3) as u8, (y * 30) as u8, 0] } else { [0, (y * 30) as u8, 150 + (x * 3) as u8] });
+        let pair = picture(16, 4, |x, y| if x < 8 { [150 + (x * 3) as u8, (y * 30) as u8, 0] } else { [0, (y * 30) as u8, 150 + (x * 3) as u8] });
         let mut metadata = exif();
         metadata[18..20].copy_from_slice(&orientation.to_le_bytes());
-        pair.meta.exif = Some(metadata);
-        for (kind, bytes) in
+        for (kind, encoded) in
             [("PNG", stereo::encode_png(&pair, &EncodeOptions::default()).unwrap()), ("JPS", stereo::encode_jps(&pair, &EncodeOptions::default()).unwrap())]
         {
+            let bytes = with_packed_exif(&encoded, &metadata, kind == "PNG");
+            let stored = decode_with(&bytes, &DecodeOptions { keep_orientation: true, ..DecodeOptions::default() }).unwrap();
+            assert_eq!(exif_orientation(stored.meta.exif.as_deref().unwrap()), orientation, "fixture must carry the requested orientation");
+            let unrotated = read(&encoded, false).convert(ChannelLayout::Rgb, SampleType::U8);
             let got = read(&bytes, false);
             let (eye_w, eye_h) = if orientation >= 5 { (4, 8) } else { (8, 4) };
             assert_eq!(got.dimensions(), (eye_w * 2, eye_h), "{kind} orientation {orientation}");
             assert!(is_red(mean(&got, 0, eye_w)), "{kind} keeps left eye");
             assert!(is_blue(mean(&got, eye_w, eye_w * 2)), "{kind} keeps right eye");
+            let rgb = got.convert(ChannelLayout::Rgb, SampleType::U8);
+            for eye in 0..2usize {
+                for y in 0..4usize {
+                    for x in 0..8usize {
+                        let (dx, dy) = match orientation {
+                            2 => (7 - x, y),
+                            3 => (7 - x, 3 - y),
+                            4 => (x, 3 - y),
+                            5 => (y, x),
+                            6 => (3 - y, x),
+                            7 => (3 - y, 7 - x),
+                            8 => (y, 7 - x),
+                            _ => unreachable!(),
+                        };
+                        let src = (y * 16 + eye * 8 + x) * 3;
+                        let dst = (dy * eye_w as usize * 2 + eye * eye_w as usize + dx) * 3;
+                        assert_eq!(&rgb.data()[dst..dst + 3], &unrotated.data()[src..src + 3], "{kind} orientation {orientation}, eye {eye}, ({x},{y})");
+                    }
+                }
+            }
             assert_eq!(exif_orientation(got.meta.exif.as_deref().unwrap()), 1);
             let saved = stereo::encode_png(&got, &EncodeOptions::default()).unwrap();
             let reopened = read(&saved, false);
