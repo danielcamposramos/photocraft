@@ -387,6 +387,10 @@ fn import_stages(name: &str, bytes: &[u8], ctl: &photocraft_raster::Interrupt, m
     if is_psd_input(name, bytes) {
         return import_psd(name, bytes, ctl);
     }
+    // Keep both views and normalize their order before editing the canvas.
+    if let Some(layout) = photocraft_codecs::stereo::layout(bytes, has_extension(name, "jps")) {
+        return flat::import_stereo(name, bytes, &layout);
+    }
     flat::import_flat(name, bytes)
 }
 
@@ -524,6 +528,9 @@ fn export_stages(doc: &Document, name_or_ext: &str, opts: &ExportOptions, ctl: &
         file.header.validate()?;
         let bytes = file.to_bytes()?;
         return Ok(ExportResult { bytes, warnings });
+    }
+    if matches!(ext.as_str(), "mpo" | "jps") || (ext == "png" && doc.stereo) {
+        return flat::export_stereo(doc, &ext, opts, ctl);
     }
     let format = photocraft_codecs::from_extension(&ext).ok_or_else(|| IoError::UnknownFormat(name_or_ext.to_string()))?;
     if format == photocraft_codecs::Format::Tiff && opts.tiff_layers && tiff_layers::would_write_layers(doc) {

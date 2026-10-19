@@ -1477,3 +1477,25 @@ fn folder_listing_recognises_gzipped_xcf_by_its_double_extension() {
     assert!(!super::openable_name("archive.tar.gz"));
     assert!(!super::openable_name("notes.txt"));
 }
+
+#[test]
+fn batch_folder_includes_stereo_pairs_case_insensitively() {
+    let dir = tmp("stereo-batch");
+    let mut pair = Document::new("pair", Size::new(16, 8), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
+    pair.stereo = true;
+    let mut wanted = Vec::new();
+    for name in ["a.MPO", "b.JpS"] {
+        let path = join(&dir, name);
+        save_doc(&pair, &path, None).unwrap();
+        wanted.push(path);
+    }
+    std::fs::write(join(&dir, "ignore.txt"), "not an image").unwrap();
+    assert_eq!(list_images(&dir).unwrap(), wanted);
+    for path in wanted {
+        let mut s = Session::new();
+        s.execute("file.open", json!({"path": path})).unwrap();
+        assert!(doc(&s).stereo);
+        assert_eq!(doc(&s).size, Size::new(16, 8));
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}

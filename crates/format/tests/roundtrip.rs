@@ -183,6 +183,15 @@ fn empty_document_roundtrips() {
 }
 
 #[test]
+fn stereo_flag_roundtrips() {
+    let mut doc = Document::new("pair", photocraft_doc::Size::new(8, 2), ColorMode::Rgb, SampleType::U8);
+    doc.stereo = true;
+    let back = load_from_bytes(&save_to_bytes(&doc, &SaveOptions::default()).unwrap()).unwrap();
+    assert!(back.stereo);
+    assert_eq!(back, doc);
+}
+
+#[test]
 fn exhausted_document_ids_and_maximal_text_runs_roundtrip() {
     let mut doc = Document::new("exhausted", photocraft_doc::Size::new(2, 1), ColorMode::Rgb, SampleType::U8);
     doc.slices.list.push(Slice { id: u32::MAX, ..Default::default() });
