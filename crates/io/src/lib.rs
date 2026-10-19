@@ -1022,7 +1022,13 @@ fn import_stages(name: &str, bytes: &[u8], ctl: &photocraft_raster::Interrupt, o
         Route::Pdn => pdn::import(name, bytes, ctl),
         Route::Raw => raw::import_raw_demosaic(name, bytes, opts.demosaic),
         Route::Svg => svg::import_svg_with_group_depth(name, bytes, opts.max_group_depth),
-        Route::Flat => flat::import_flat_with_options(name, bytes, opts, ctl),
+        Route::Flat => {
+            if let Some(layout) = photocraft_codecs::stereo::layout(bytes, has_extension(name, "jps")) {
+                flat::import_stereo(name, bytes, &layout)
+            } else {
+                flat::import_flat_with_options(name, bytes, opts, ctl)
+            }
+        }
     }
 }
 
@@ -1270,6 +1276,9 @@ fn export_stages_with_renderer(
             warnings.extend(r.drain_diagnostics());
         }
         return Ok(EncodedExport { encoded: Encoded::Psd(Box::new(file)), warnings });
+    }
+    if matches!(ext.as_str(), "mpo" | "jps") || (ext == "png" && doc.stereo) {
+        return flat::export_stereo(doc, &ext, opts, ctl);
     }
     let format = photocraft_codecs::from_extension(&ext).ok_or_else(|| IoError::UnknownFormat(name_or_ext.to_string()))?;
     if format == photocraft_codecs::Format::Tiff && opts.tiff_layers && tiff_layers::would_write_layers(doc) {

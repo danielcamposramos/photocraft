@@ -329,3 +329,7 @@ sync_github_name = false
 [people.tomgardenart]
 display_name = "Nostella"
 sync_github_name = false
+
+[people.danielcamposramos]
+real_name = "Daniel Campos Ramos"
+sync_github_name = true

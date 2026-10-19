@@ -326,6 +326,19 @@ fn cicp_profile(img: &Image) -> Option<Arc<Vec<u8>>> {
     photocraft_cms::builtin::cicp_rgb(primaries, c.transfer, linear).map(|p| p.to_bytes())
 }
 
+/// Opens a stereo file as a full side-by-side canvas, left eye first.
+pub fn import_stereo(name: &str, bytes: &[u8], layout: &codecs::stereo::StereoLayout) -> Result<ImportResult, IoError> {
+    let img = codecs::stereo::decode_pair(bytes, layout, &codecs::DecodeOptions::default())?;
+    let mut result = image_to_document(name, &img)?;
+    result.document.stereo = true;
+    result.document.file_encoding = file_encoding(bytes);
+    if codecs::detect(bytes) == Some(Format::Png) {
+        // Pixels have been normalized, so the original cross-fuse byte no longer describes them.
+        result.document.file_encoding.png_stereo = Some(codecs::PngStereo::DivergingFuse.mode());
+    }
+    Ok(result)
+}
+
 /// Every frame of a GIF as a single-layer document, handed to `each` in order with its delay in
 /// milliseconds (a still GIF has one). One frame at a time becomes a document, so the caller
 /// can flatten and drop it. Returns the number of frames; stops at the first error `each` gives.
@@ -2118,14 +2131,19 @@ fn with_alpha_channel(doc: &Document, img: Image, channel: &AlphaChannel, what: 
 /// every flat export, and of a layered TIFF (whose composite is a flat image to other readers),
 /// so export-wide policies on the image's metadata apply to both.
 pub(crate) fn encode_image(img: &Image, format: Format, opts: &ExportOptions, mut warnings: Vec<String>) -> Result<ExportResult, IoError> {
+    append_fidelity_warnings(img, format, opts, &mut warnings)?;
+    let bytes = codecs::encode(img, format, &opts.encode)?;
+    Ok(ExportResult { bytes, warnings })
+}
+
+fn append_fidelity_warnings(img: &Image, format: Format, opts: &ExportOptions, warnings: &mut Vec<String>) -> Result<(), IoError> {
     for w in codecs::fidelity_warnings_with(img, format, &opts.encode) {
         if w.is_fatal() {
             return Err(IoError::Unsupported(w.to_string()));
         }
         warnings.push(w.to_string());
     }
-    let bytes = codecs::encode(img, format, &opts.encode)?;
-    Ok(ExportResult { bytes, warnings })
+    Ok(())
 }
 
 /// `img` with every band of rows mapped by `f` (normalized samples in, normalized `layout`
@@ -3032,3 +3050,24 @@ mod fused_tile_tests {
 
 #[cfg(test)]
 mod png_stream_tests;
+
+/// Saves the normalized stereo canvas with the destination format's own marker.
+pub(crate) fn export_stereo(doc: &Document, ext: &str, opts: &ExportOptions, ctl: &photocraft_raster::Interrupt) -> Result<ExportResult, IoError> {
+    if !doc.stereo {
+        return Err(IoError::Unsupported("MPO and JPS require a stereo document".into()));
+    }
+    let format = if ext == "png" { Format::Png } else { Format::Jpeg };
+    let mut warnings = Vec::new();
+    let mut img = document_to_image_for_with_renderer(doc, &mut warnings, false, false, ctl, None)?;
+    ctl.check().map_err(|_| IoError::Cancelled)?;
+    strip_xmp(&mut img.meta, opts);
+    let img = prepare_flat(img, format, &mut warnings)?;
+    append_fidelity_warnings(&img, format, opts, &mut warnings)?;
+    let bytes = match ext {
+        "mpo" => codecs::stereo::encode_mpo(&img, &opts.encode)?,
+        "jps" => codecs::stereo::encode_jps(&img, &opts.encode)?,
+        "png" => codecs::stereo::encode_png(&img, &opts.encode)?,
+        _ => return Err(IoError::UnknownFormat(ext.into())),
+    };
+    Ok(ExportResult { bytes, warnings })
+}
