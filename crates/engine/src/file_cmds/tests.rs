@@ -1370,7 +1370,7 @@ fn batch_folder_includes_stereo_pairs_case_insensitively() {
     assert_eq!(list_images(&dir).unwrap(), wanted);
     for path in wanted {
         let mut s = Session::new();
-        s.execute("file.open", json!({"path": path})).unwrap();
+        open_bytes_as(&mut s, &path, &std::fs::read(&path).unwrap(), None, Some(path.clone())).unwrap();
         assert!(doc(&s).stereo);
         assert_eq!(doc(&s).size, photocraft_doc::Size::new(16, 8));
     }
