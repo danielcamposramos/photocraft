@@ -933,7 +933,8 @@ pub struct FileEncoding {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub webp_quality: Option<u8>,
     /// PNG stereo pairing (the `sTER` chunk's mode byte, PNG Extensions 1.4.0 §3.6): `Some(0)`
-    /// side by side, `Some(1)` stacked, so saving a stereo PNG keeps the mark (#6063).
+    /// cross-fuse (right eye first), `Some(1)` diverging-fuse (left eye first). Both are
+    /// side by side; saving a stereo PNG keeps this eye-order mark (#6063).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub png_stereo: Option<u8>,
 }

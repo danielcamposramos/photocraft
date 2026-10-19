@@ -1173,7 +1173,7 @@ fn a_lab_document_with_one_layer_is_not_reported_as_flattened() {
 fn a_stereo_png_keeps_its_stereo_mark_on_save() {
     use photocraft_codecs::{ChannelLayout, EncodeOptions, Format, Image, PngStereo, SampleType as CS};
     let img = Image::from_raw(4, 2, ChannelLayout::Rgb, CS::U8, vec![40u8; 24]).unwrap();
-    for view in [PngStereo::Horizontal, PngStereo::Vertical] {
+    for view in [PngStereo::CrossFuse, PngStereo::DivergingFuse] {
         let bytes = photocraft_codecs::encode(&img, Format::Png, &EncodeOptions { png_stereo: Some(view), ..Default::default() }).unwrap();
         let doc = import("stereo.png", &bytes).unwrap().document;
         assert_eq!(doc.file_encoding.png_stereo, Some(view.mode()));
