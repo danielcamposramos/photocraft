@@ -6,7 +6,11 @@
 #
 # Copy this block, replacing your-github-username (every field is optional):
 #
-#   [people.your-github-username]
+#   [people.danielcamposramos]
+real_name = "Daniel Campos Ramos"
+sync_github_name = true
+
+[people.your-github-username]
 #   real_name = "Your Name"        # shown when the viewer picks "Real name"
 #   display_name = "Nickname"      # shown when the viewer picks "Display name"
 #   sync_github_name = true        # or: use the name on your public GitHub profile as display name
@@ -330,6 +334,3 @@ sync_github_name = false
 display_name = "Nostella"
 sync_github_name = false
 
-[people.danielcamposramos]
-real_name = "Daniel Campos Ramos"
-sync_github_name = true
