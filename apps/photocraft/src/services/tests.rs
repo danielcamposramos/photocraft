@@ -276,7 +276,7 @@ fn every_save_dialog_leads_with_its_own_extension() {
     // Save As, Save a Copy.
     // Files in a format Save As can't write, like .dng, should suggest .psd instead.
     let _ = invoke(&mut app, "file.saveAs");
-    for name in ["cat.pcraft", "cat.jpeg", "cat.gif", "cat.bmp", "cat.dng"] {
+    for name in ["cat.pcraft", "cat.jpeg", "cat.gif", "cat.bmp", "cat.dng", "cat.mpo", "cat.jps"] {
         app.session.active_mut().unwrap().path = Some(name.into());
         let _ = invoke(&mut app, "file.saveAs");
     }
@@ -303,7 +303,7 @@ fn every_save_dialog_leads_with_its_own_extension() {
     // The extension each save above should suggest, in order.
     let want = [
         "psd",                            // Save As untitled
-        "pcraft jpeg gif bmp psd",        // Save As opened .pcraft .jpeg .gif .bmp .dng
+        "pcraft jpeg gif bmp psd mpo jps",        // Save As opened .pcraft .jpeg .gif .bmp .dng
         "psd",                            // Save a Copy
         "png jpg webp tif tga",           // Export As
         "png jpg gif webp",               // Quick Export
