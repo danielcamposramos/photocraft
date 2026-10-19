@@ -26,7 +26,7 @@ XL are missing (gap G10). Remaining: 300–500 h including PSD fidelity.
 | Cloud PSD (.psdc) | R/W | no | no | Out of scope (Adobe cloud) |
 | TIFF | R/W | yes | yes | 8/16/32f, Gray/RGB/CMYK, BigTIFF, every IFD, banded parallel decode; layered TIFF both byte orders, including Photoshop mixed-order type blocks (#4758); LZW/ZIP for scripted saves by `tiffCompression`; undecodable type keeps saved pixels (FILE-215-7: extra alpha channels not written) |
 | JPEG | R/W | yes | yes | 8-bit Gray/RGB/CMYK, ICC/EXIF/XMP; Save keeps the opened file's quality (estimated from its quantisation tables, #2399); File › Save, Save As and Save a Copy ask JPEG Options: Quality 0–12, starting at the opened file's quality or else the Export preference, and Baseline ("Standard") / Baseline Optimized / Progressive; scripts pass `quality`/`jpegFormat`, the CLI `--jpeg-format` (FILE-215-19). Baseline Optimized fits the Huffman tables only at 4:4:4 (Gray, CMYK) or progressive: RGB is written 4:2:0, which zune-jpeg 0.5.15 decodes wrongly with fitted tables, as in Save for Web. No Matte, progressive Scans (3–5) or size preview |
-| PNG | R/W | yes | yes | 8/16-bit, ICC/text; APNG first frame only; alpha channels on open (#2225); palette PNGs open in Indexed Color mode with their transparent entry (#4804); Save keeps a stereo PNG's `sTER` pairing (#6063) |
+| PNG | R/W | yes | yes | 8/16-bit, ICC/text; APNG first frame only; alpha channels on open (#2225); palette PNGs open in Indexed Color mode with their transparent entry (#4804); Stereo pairs normalize to left-first full SBS on open; Save writes one mode-1 `sTER` with the required padding (#6063) |
 | GIF | R/W | yes | yes | File › Open keeps the first frame; New Video Layer from File and Video Frames to Layers take every frame, with the timeline rate from the delays (#572). Per-frame delays and keeping the frames in `.pcraft` are not done |
 | BMP | R/W | yes | yes | 8-bit; palette BMPs open in Indexed Color mode and Indexed Color documents save as palette BMPs (no transparency) |
 | WebP | R/W | yes | yes | Lossless and our own lossy VP8 encoder; ICC/EXIF/XMP; Save keeps an opened file lossy (at its quality) or lossless (#2399). File › Open keeps an animation's first frame; New Video Layer from File and Video Frames to Layers take every frame, with the timeline rate from the durations (#1198) |
@@ -49,7 +49,7 @@ XL are missing (gap G10). Remaining: 300–500 h including PSD fidelity.
 | Pixar | R/W | no | no | |
 | Amiga IFF | R/W | yes | no | Read-only: 1–8 planes with CMAP, stored and ByteRun1 |
 | Wireless Bitmap | R/W | no | no | |
-| MPO / JPS (stereo) | R/W | no | no | |
+| MPO / JPS (stereo) | R/W | partial | yes | Two MPO Disparity views in viewpoint order; JPS side-by-side, over/under and interleaved input; full pair export with MPF / APP3 metadata. Anaglyph and uncommon scaling combinations return an explicit unsupported error. Open/Save and batch selectors include both extensions (#2181, #6051, #6052). |
 | PICT | R | no | no | Legacy |
 | Scitex CT | R/W | no | no | Legacy |
 | Photoshop Raw (.raw) | R/W | no | no | |
@@ -162,6 +162,7 @@ remaining gaps in #1606 stay tracked with per-sample corpus ceilings.
 | 2026-10-15 | minor | PSD smart filters: Wind (`Wnd `, `WndM` method, `Drct` direction), Extrude (`Extr`, `ExtT` type, size, depth, `ExtR` depth mode, solid front faces, mask incomplete blocks) and Tiles (`Tls `, count, offset, `FlCl` fill with the entry's `FrgC`/`BckC`) open as editable smart filters and save in the shape measured in Photoshop (#6314, FILE-215-2) |
 | 2026-10-15 | minor | PSD smart filters: Offset (`Ofst`: `Hrzn`/`Vrtc` long, `Fl  ` `FlMd` Wrap/Background/Repeat) and Custom (`Cstm`: `Scl `, `Ofst` long, 25-long `Mtrx`) map both ways in `filterFX`, matching descriptors measured in Photoshop (FILE-215-2, #6304) |
 | 2026-10-15 | minor | PSD smart filters: Mezzotint (`Mztn`, `MztT` enum, all 10 types) and Color Halftone (`ClrH`, `Rds `/`Ang1`–`Ang4` longs) open as editable filters and save in Photoshop's shape, measured in Photoshop (FILE-215-2); Mezzotint's PhotoCraft-only seed is not saved |
+| 2026-10-19 | minor | MPO/JPS and stereo PNG import/save preserve both eyes using their format metadata; `.pcraft` preserves the stereo flag. Unsupported JPS layouts/scaling are reported explicitly. |
 | 2026-10-15 | minor | PNG: a stereo PNG's `sTER` pairing (PNG Extensions 1.4.0 §3.6) is read on open and written back on save, so the file still says it is a stereo pair (#6063) |
 | 2026-10-15 | minor | Indexed Color documents save as 8-bit palette BMPs with their colour table instead of 24-bit RGB; a palette BMP opens with its declared number of colours, not 256 |
 | 2026-10-15 | minor | PSD guides: image resource 1092 (guides v2) gives guides their own colours on import; 1092 and 1097 (guide GUIDs) are written back only while they still describe the document's guides, so an edit no longer leaves Photoshop a stale second guide list (#5966) |

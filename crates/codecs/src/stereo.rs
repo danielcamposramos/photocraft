@@ -23,7 +23,7 @@ use std::ops::Range;
 use crate::error::CodecError;
 use crate::format::{Format, detect};
 use crate::image::{Image, SampleType};
-use crate::options::{DecodeOptions, EncodeOptions};
+use crate::options::{DecodeOptions, EncodeOptions, PngStereo};
 
 /// MP Type Code of a Disparity image (CIPA DC-007-2009 Table 4): one view of a stereo scene.
 const MP_TYPE_DISPARITY: u32 = 0x02_0002;
@@ -40,12 +40,10 @@ const JPS_STEREO: u32 = 0x01;
 const JPS_INTERLEAVED: u32 = 0x01;
 const JPS_SIDE_BY_SIDE: u32 = 0x02;
 const JPS_OVER_UNDER: u32 = 0x03;
+const JPS_ANAGLYPH: u32 = 0x04;
 const JPS_HALF_HEIGHT: u32 = 0x01;
 const JPS_HALF_WIDTH: u32 = 0x02;
 const JPS_LEFT_FIRST: u32 = 0x04;
-/// PNG `sTER` modes.
-const STER_CROSS: u8 = 0;
-const STER_DIVERGING: u8 = 1;
 /// MP Entries read at most (an MP file lists one per Individual Image).
 const MAX_MP_ENTRIES: usize = 64;
 
@@ -62,6 +60,8 @@ pub enum FirstEye {
 pub enum StereoLayout {
     /// Two Individual Images of an MPO: the byte ranges of the left and the right eye's JPEG.
     Mpo { left: Range<usize>, right: Range<usize> },
+    /// An MP file that cannot be represented by this two-view document.
+    UnsupportedMpo { reason: &'static str },
     /// One picture with both eyes side by side, `gap` columns apart. `squeezed`: each eye is stored
     /// at half its width (JPS "half width").
     SideBySide { first: FirstEye, gap: u32, squeezed: bool },
@@ -70,6 +70,11 @@ pub enum StereoLayout {
     OverUnder { first: FirstEye, gap: u32, squeezed: bool },
     /// One picture whose rows alternate between the eyes (JPS "interleaved"), starting with `first`.
     Rows { first: FirstEye },
+    /// A red/cyan anaglyph. The descriptor identifies the red channel's eye, but the
+    /// missing colour channels cannot be recovered as two original full-colour views.
+    Anaglyph { red: FirstEye },
+    /// A stereo descriptor whose layout or scaling is not implemented; never silently mono.
+    UnsupportedJps { descriptor: u32 },
 }
 
 /// The stereo layout `bytes` declare, or `None` for an ordinary (or undecidable) file: an MPO with
@@ -125,7 +130,9 @@ fn markers(b: &[u8]) -> Markers<'_> {
             0xE2 if m.mpf.is_none() && seg.starts_with(b"MPF\0") => m.mpf = seg.get(4..).map(|d| (i + 8, d)),
             // "_JPSJPS_", block length, then the descriptor (most significant byte first)
             0xE3 if m.jps.is_none() && seg.starts_with(b"_JPSJPS_") => {
-                m.jps = seg.get(10..14).map(|d| u32::from_be_bytes([d[0], d[1], d[2], d[3]]));
+                if let Some(n) = seg.get(8..10).map(|d| usize::from(u16::from_be_bytes([d[0], d[1]]))) {
+                    m.jps = (n >= 4).then(|| seg.get(10..10 + n)).flatten().and_then(|d| d.get(..4)).map(|d| u32::from_be_bytes([d[0], d[1], d[2], d[3]]));
+                }
             }
             _ => {}
         }
@@ -158,11 +165,11 @@ impl<'a> Tiff<'a> {
         Some(Tiff { data, le })
     }
     fn u16(&self, at: usize) -> Option<u16> {
-        let b = self.data.get(at..at + 2)?;
+        let b = self.data.get(at..at.checked_add(2)?)?;
         Some(if self.le { u16::from_le_bytes([b[0], b[1]]) } else { u16::from_be_bytes([b[0], b[1]]) })
     }
     fn u32(&self, at: usize) -> Option<u32> {
-        let b = self.data.get(at..at + 4)?;
+        let b = self.data.get(at..at.checked_add(4)?)?;
         let a = [b[0], b[1], b[2], b[3]];
         Some(if self.le { u32::from_le_bytes(a) } else { u32::from_be_bytes(a) })
     }
@@ -175,7 +182,7 @@ impl<'a> Tiff<'a> {
         let entries = (0..n.min(256))
             .map(|k| {
                 let e = at.checked_add(2 + 12 * k)?;
-                Some(Entry { tag: self.u16(e)?, typ: self.u16(e + 2)?, count: self.u32(e + 4)?, at: e + 8 })
+                Some(Entry { tag: self.u16(e)?, typ: self.u16(e.checked_add(2)?)?, count: self.u32(e.checked_add(4)?)?, at: e.checked_add(8)? })
             })
             .collect::<Option<Vec<_>>>()?;
         let next = self.u32(at.checked_add(2 + 12 * n)?).and_then(|v| usize::try_from(v).ok()).unwrap_or(0);
@@ -206,7 +213,7 @@ fn individual_number(t: &Tiff, pos: usize) -> Option<u32> {
     t.long(entries.iter().find(|e| e.tag == MPF_INDIVIDUAL_NUM)?)
 }
 
-/// The left and right eye of an MPO: the first two Disparity images in viewpoint order. A number
+/// The left and right eye of an MPO: exactly two Disparity images in viewpoint order. A number
 /// of 0 marks a composite of several views and FFFFFFFF.H an unknown position (§6.2.2.2):
 /// composites are not eyes, and images of unknown (or missing) number keep their order in the MP
 /// Index, after the numbered ones.
@@ -214,6 +221,9 @@ fn mpo_layout(bytes: &[u8], base: usize, data: &[u8]) -> Option<StereoLayout> {
     let t = Tiff::new(data)?;
     let (entries, attributes) = t.ifd(t.first_ifd()?)?;
     let list = t.bytes(entries.iter().find(|e| e.tag == MPF_ENTRY)?)?;
+    if list.len() / 16 > MAX_MP_ENTRIES {
+        return Some(StereoLayout::UnsupportedMpo { reason: "MPO has too many images to inspect safely" });
+    }
     let mut views: Vec<(u32, usize, Range<usize>)> = Vec::new();
     for (i, rec) in list.as_chunks::<16>().0.iter().enumerate().take(MAX_MP_ENTRIES) {
         let field = |o: usize| {
@@ -241,13 +251,15 @@ fn mpo_layout(bytes: &[u8], base: usize, data: &[u8]) -> Option<StereoLayout> {
             n => views.push((n.unwrap_or(u32::MAX), i, range)),
         }
     }
+    if views.len() > 2 {
+        return Some(StereoLayout::UnsupportedMpo { reason: "MPO contains more than two disparity views; a stereo document would discard views" });
+    }
     views.sort_by_key(|v| (v.0, v.1));
     let mut views = views.into_iter().map(|v| v.2);
     Some(StereoLayout::Mpo { left: views.next()?, right: views.next()? })
 }
 
-/// The packed layout a JPS descriptor declares; `None` for monoscopic and anaglyph images (one
-/// picture for both eyes) and for values the specification does not define.
+/// The packed layout a JPS descriptor declares; `None` for non-stereoscopic media.
 fn jps_layout(d: u32) -> Option<StereoLayout> {
     if d & 0xFF != JPS_STEREO {
         return None;
@@ -255,11 +267,20 @@ fn jps_layout(d: u32) -> Option<StereoLayout> {
     let flags = (d >> 16) & 0xFF;
     let first = if flags & JPS_LEFT_FIRST != 0 { FirstEye::Left } else { FirstEye::Right };
     let gap = d >> 24;
-    match (d >> 8) & 0xFF {
+    let packing = (d >> 8) & 0xFF;
+    // Do not discard scaling flags that this implementation cannot reconstruct.
+    if (packing == JPS_SIDE_BY_SIDE && flags & JPS_HALF_HEIGHT != 0)
+        || (packing == JPS_OVER_UNDER && flags & JPS_HALF_WIDTH != 0)
+        || (packing == JPS_INTERLEAVED && flags & (JPS_HALF_HEIGHT | JPS_HALF_WIDTH) != 0)
+    {
+        return Some(StereoLayout::UnsupportedJps { descriptor: d });
+    }
+    match packing {
         JPS_SIDE_BY_SIDE => Some(StereoLayout::SideBySide { first, gap, squeezed: flags & JPS_HALF_WIDTH != 0 }),
         JPS_OVER_UNDER => Some(StereoLayout::OverUnder { first, gap, squeezed: flags & JPS_HALF_HEIGHT != 0 }),
         JPS_INTERLEAVED => Some(StereoLayout::Rows { first }),
-        _ => None,
+        JPS_ANAGLYPH => Some(StereoLayout::Anaglyph { red: first }),
+        _ => Some(StereoLayout::UnsupportedJps { descriptor: d }),
     }
 }
 
@@ -267,6 +288,8 @@ fn jps_layout(d: u32) -> Option<StereoLayout> {
 /// the subimages follows from the image width, and a width that needs more than seven padding
 /// columns is an error (the chunk is then ignored).
 fn png_layout(bytes: &[u8]) -> Option<StereoLayout> {
+    // Reuse the upstream CRC and payload validation; geometry still follows §3.6.
+    let pairing = crate::png_stereo(bytes)?;
     let mut width = 0u32;
     let mut p = 8usize;
     while let Some(head) = bytes.get(p..p.checked_add(8)?) {
@@ -275,10 +298,12 @@ fn png_layout(bytes: &[u8]) -> Option<StereoLayout> {
         match &head[4..8] {
             b"IHDR" => width = u32::from_be_bytes([*data.first()?, *data.get(1)?, *data.get(2)?, *data.get(3)?]),
             b"sTER" => {
-                let first = match *data.first()? {
-                    STER_CROSS => FirstEye::Right,
-                    STER_DIVERGING => FirstEye::Left,
-                    _ => return None,
+                if data.len() != 1 || data[0] != pairing.mode() {
+                    return None;
+                }
+                let first = match pairing {
+                    PngStereo::CrossFuse => FirstEye::Right,
+                    PngStereo::DivergingFuse => FirstEye::Left,
                 };
                 // padding := 15 - ((W - 1) mod 16); more than 7 is an error
                 let gap = 15 - (width.checked_sub(1)? % 16);
@@ -300,28 +325,58 @@ fn bad(format: Format, what: &str) -> CodecError {
 /// half, the right eye in the right half. An MPO's Individual Images are decoded (and turned
 /// upright) one by one and must have the same size; a packed picture is decoded as stored and
 /// split, its squeezed or interleaved eyes stretched back to their full width or height (linear
-/// interpolation). The metadata (ICC profile, EXIF, XMP, resolution) is that of the first image.
+/// interpolation), and each eye turned upright unless `opts.keep_orientation`. The metadata (ICC profile, EXIF, XMP, resolution) is that of the first image.
 pub fn decode_pair(bytes: &[u8], layout: &StereoLayout, opts: &DecodeOptions) -> Result<Image, CodecError> {
+    if let StereoLayout::UnsupportedMpo { reason } = layout {
+        return Err(CodecError::unsupported(Format::Jpeg, *reason));
+    }
+    if let StereoLayout::Anaglyph { .. } | StereoLayout::UnsupportedJps { .. } = layout {
+        return Err(CodecError::unsupported(Format::Jpeg, "JPS anaglyph or unsupported layout/scaling descriptor"));
+    }
     let (left, right, icc, meta, warnings) = match layout {
         StereoLayout::Mpo { left, right } => {
             let get = |r: &Range<usize>| bytes.get(r.clone()).ok_or_else(|| bad(Format::Jpeg, "MPO image outside the file"));
             let (mut l, mut r) = (crate::decode_as_with(Format::Jpeg, get(left)?, opts)?, crate::decode_as_with(Format::Jpeg, get(right)?, opts)?);
-            if l.dimensions() != r.dimensions() || l.layout() != r.layout() {
+            if l.dimensions() != r.dimensions() || l.layout() != r.layout() || l.icc != r.icc {
                 return Err(CodecError::Unsupported {
                     format: Format::Jpeg,
-                    reason: format!("the MPO's two views differ ({}×{} and {}×{})", l.width(), l.height(), r.width(), r.height()),
+                    reason: format!(
+                        "the MPO's two views differ in geometry, layout or ICC profile ({}×{} and {}×{})",
+                        l.width(),
+                        l.height(),
+                        r.width(),
+                        r.height()
+                    ),
                 });
             }
-            // the file's own metadata is the first image's
+            // Keep metadata from the first physical image, but report damage to either eye.
+            let mut warnings = std::mem::take(&mut l.warnings);
+            warnings.append(&mut r.warnings);
             let first = if left.start <= right.start { &mut l } else { &mut r };
-            let (icc, meta, warnings) = (first.icc.take(), std::mem::take(&mut first.meta), std::mem::take(&mut first.warnings));
+            let (icc, meta) = (first.icc.take(), std::mem::take(&mut first.meta));
             (l, r, icc, meta, warnings)
         }
         _ => {
             let format = detect(bytes).ok_or(CodecError::UnknownFormat)?;
             let mut whole = crate::decode_as_with(format, bytes, &DecodeOptions { keep_orientation: true, ..opts.clone() })?;
-            let (l, r) = split(&whole, layout, format)?;
-            (l, r, whole.icc.take(), std::mem::take(&mut whole.meta), std::mem::take(&mut whole.warnings))
+            // Check the expanded output before splitting or stretching either view.
+            let (width, height) = pair_dimensions(whole.width(), whole.height(), layout, format)?;
+            opts.limits.check(width, height, whole.layout(), whole.sample_type())?;
+            let orientation = whole.meta.exif.as_deref().map_or(1, crate::exif_orientation);
+            if !opts.keep_orientation && (5..=8).contains(&orientation) {
+                let upright_width = height.checked_mul(2).ok_or_else(|| CodecError::LimitExceeded("stereo pair too wide".into()))?;
+                opts.limits.check(upright_width, width / 2, whole.layout(), whole.sample_type())?;
+            }
+            let (mut l, mut r) = split(&whole, layout, format)?;
+            // Orient each view separately: rotating the packed canvas would turn SBS into
+            // top/bottom, and mirroring it would exchange the eyes. Clear the source tag too.
+            l.meta = std::mem::take(&mut whole.meta);
+            if !opts.keep_orientation {
+                l = l.oriented(orientation)?;
+                r = r.oriented(orientation)?;
+            }
+            let meta = std::mem::take(&mut l.meta);
+            (l, r, whole.icc.take(), meta, std::mem::take(&mut whole.warnings))
         }
     };
     let (w, h) = left.dimensions();
@@ -332,6 +387,24 @@ pub fn decode_pair(bytes: &[u8], layout: &StereoLayout, opts: &DecodeOptions) ->
     pair.meta = meta;
     pair.warnings = warnings;
     Ok(pair)
+}
+
+fn pair_dimensions(w: u32, h: u32, layout: &StereoLayout, format: Format) -> Result<(u32, u32), CodecError> {
+    let invalid = || bad(format, "stereo picture must contain two equal, nonempty views");
+    let twice = |n: u32| n.checked_mul(2).ok_or_else(|| CodecError::LimitExceeded("stereo pair dimensions overflow".into()));
+    match *layout {
+        StereoLayout::SideBySide { gap, squeezed, .. } => {
+            let width = w.checked_sub(gap).filter(|n| *n >= 2 && n.is_multiple_of(2)).ok_or_else(invalid)?;
+            Ok((if squeezed { twice(width)? } else { width }, h))
+        }
+        StereoLayout::OverUnder { gap, squeezed, .. } => {
+            let height = h.checked_sub(gap).filter(|n| *n >= 2 && n.is_multiple_of(2)).ok_or_else(invalid)?;
+            Ok((twice(w)?, if squeezed { height } else { height / 2 }))
+        }
+        StereoLayout::Rows { .. } if h >= 2 && h.is_multiple_of(2) => Ok((twice(w)?, h)),
+        StereoLayout::Anaglyph { .. } => Err(CodecError::unsupported(format, "anaglyph JPS cannot be recovered as two original full-colour views")),
+        _ => Err(invalid()),
+    }
 }
 
 /// The eyes of a packed picture, as (left, right).
@@ -362,7 +435,8 @@ fn split(img: &Image, layout: &StereoLayout, format: Format) -> Result<(Image, I
             let eye = h / 2;
             (stretch(&rows(img, 0, eye, 2)?, false, format)?, stretch(&rows(img, 1, eye, 2)?, false, format)?, first)
         }
-        StereoLayout::Mpo { .. } => return Err(bad(Format::Jpeg, "an MPO is not one packed picture")),
+        StereoLayout::Mpo { .. } | StereoLayout::UnsupportedMpo { .. } => return Err(bad(Format::Jpeg, "an MPO is not one packed picture")),
+        StereoLayout::Anaglyph { .. } | StereoLayout::UnsupportedJps { .. } => return Err(CodecError::unsupported(format, "JPS layout")),
     };
     Ok(match first {
         FirstEye::Left => (a, b),
@@ -414,7 +488,8 @@ fn stretch(img: &Image, horizontal: bool, format: Format) -> Result<Image, Codec
     }
     let (w, h) = img.dimensions();
     let n = img.layout().channels();
-    let (ow, oh) = if horizontal { (w * 2, h) } else { (w, h * 2) };
+    let twice = |v: u32| v.checked_mul(2).ok_or_else(|| CodecError::LimitExceeded("stretched view too large".into()));
+    let (ow, oh) = if horizontal { (twice(w)?, h) } else { (w, twice(h)?) };
     let src = img.data();
     let at = |x: u32, y: u32, c: usize| src[(y as usize * w as usize + x as usize) * n + c];
     let mut out = Vec::with_capacity(ow as usize * oh as usize * n);
@@ -444,17 +519,21 @@ fn hstack(parts: &[&Image], gap: u32) -> Result<Image, CodecError> {
         return Err(CodecError::InvalidImage("the eyes of a pair differ in height or format".into()));
     }
     let px = pixel_bytes(first);
-    let gaps = gap as usize * parts.len().saturating_sub(1);
-    let w: usize = parts.iter().map(|p| p.width() as usize).sum::<usize>() + gaps;
-    let out_w = u32::try_from(w).map_err(|_| CodecError::InvalidImage("stereo pair too wide".into()))?;
-    let mut out = Vec::with_capacity(w * h as usize * px);
+    let too_large = || CodecError::LimitExceeded("stereo pair size overflows or cannot be allocated".into());
+    let gaps = (gap as usize).checked_mul(parts.len().saturating_sub(1)).ok_or_else(too_large)?;
+    let w = parts.iter().try_fold(gaps, |n, p| n.checked_add(p.width() as usize)).ok_or_else(too_large)?;
+    let out_w = u32::try_from(w).map_err(|_| too_large())?;
+    let len = w.checked_mul(h as usize).and_then(|n| n.checked_mul(px)).ok_or_else(too_large)?;
+    let mut out = Vec::new();
+    out.try_reserve_exact(len).map_err(|_| too_large())?;
     for y in 0..h as usize {
         for (k, p) in parts.iter().enumerate() {
             if k > 0 {
                 out.resize(out.len() + gap as usize * px, 0);
             }
             let row = p.width() as usize * px;
-            out.extend_from_slice(&p.data()[y * row..(y + 1) * row]);
+            let data = p.data().get(y * row..(y + 1) * row).ok_or_else(|| CodecError::InvalidImage("stereo row outside the image".into()))?;
+            out.extend_from_slice(data);
         }
     }
     let mut img = Image::from_raw(out_w, h, layout, sample, out)?;
@@ -641,26 +720,10 @@ pub fn encode_png(sbs: &Image, opts: &EncodeOptions) -> Result<Vec<u8>, CodecErr
     // padding := 7 - ((subimage_width - 1) mod 8)
     let gap = 7 - ((l.width() - 1) % 8);
     let packed = hstack(&[&l, &r], gap)?;
-    let png = crate::encode(&packed, Format::Png, opts)?;
-    // sTER goes before the first IDAT
-    let mut p = 8usize;
-    while let Some(head) = png.get(p..p + 8) {
-        let len = u32::from_be_bytes([head[0], head[1], head[2], head[3]]) as usize;
-        if &head[4..8] == b"IDAT" {
-            let mut crc = flate2::Crc::new();
-            crc.update(&[b's', b'T', b'E', b'R', STER_DIVERGING]);
-            let mut out = Vec::with_capacity(png.len() + 13);
-            out.extend_from_slice(&png[..p]);
-            out.extend_from_slice(&1u32.to_be_bytes());
-            out.extend_from_slice(b"sTER");
-            out.push(STER_DIVERGING);
-            out.extend_from_slice(&crc.sum().to_be_bytes());
-            out.extend_from_slice(&png[p..]);
-            return Ok(out);
-        }
-        p += 12 + len;
-    }
-    Err(CodecError::encode(Format::Png, "PNG without IDAT"))
+    // The ordinary PNG encoder now owns sTER writing (#6285). Override the source's
+    // byte after normalization; inserting another chunk would leave conflicting eye orders.
+    let opts = EncodeOptions { png_stereo: Some(PngStereo::DivergingFuse), ..opts.clone() };
+    crate::encode(&packed, Format::Png, &opts)
 }
 
 #[cfg(test)]
@@ -674,10 +737,11 @@ mod tests {
         assert_eq!(jps_layout(0x0602_0201), Some(StereoLayout::SideBySide { first: FirstEye::Right, gap: 6, squeezed: true }));
         assert_eq!(jps_layout(0x0005_0301), Some(StereoLayout::OverUnder { first: FirstEye::Left, gap: 0, squeezed: true }));
         assert_eq!(jps_layout(0x0000_0101), Some(StereoLayout::Rows { first: FirstEye::Right }));
-        // anaglyph: one picture for both eyes; monoscopic; undefined layouts
-        assert_eq!(jps_layout(0x0000_0401), None);
+        // Anaglyph is stereo too; bit 18 identifies its red field's eye.
+        assert_eq!(jps_layout(0x0000_0401), Some(StereoLayout::Anaglyph { red: FirstEye::Right }));
+        assert_eq!(jps_layout(0x0004_0401), Some(StereoLayout::Anaglyph { red: FirstEye::Left }));
         assert_eq!(jps_layout(0x0000_0000), None);
-        assert_eq!(jps_layout(0x0000_0901), None);
+        assert_eq!(jps_layout(0x0000_0901), Some(StereoLayout::UnsupportedJps { descriptor: 0x0000_0901 }));
     }
 
     #[test]
