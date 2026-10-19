@@ -4993,7 +4993,7 @@ dependencies = [
 
 [[package]]
 name = "photocraft-stereo-window"
-version = "0.3.0"
+version = "0.10.0"
 dependencies = [
  "log",
  "smithay-client-toolkit 0.20.0",
