@@ -842,8 +842,10 @@ mod tests {
         // Save As, Save a Copy.
         // Files in a format Save As can't write, like .dng, should suggest .psd instead.
         let _ = invoke(&mut app, "file.saveAs");
-        for name in ["cat.pcraft", "cat.jpeg", "cat.gif", "cat.bmp", "cat.dng"] {
-            app.session.active_mut().unwrap().path = Some(name.into());
+        for name in ["cat.pcraft", "cat.jpeg", "cat.gif", "cat.bmp", "cat.dng", "cat.mpo", "cat.jps"] {
+            let state = app.session.active_mut().unwrap();
+            state.path = Some(name.into());
+            Arc::make_mut(&mut state.doc).stereo = name.ends_with(".mpo") || name.ends_with(".jps");
             let _ = invoke(&mut app, "file.saveAs");
         }
         let _ = invoke(&mut app, "file.saveACopy");
@@ -868,13 +870,13 @@ mod tests {
         let exts: Vec<&str> = asked.iter().filter_map(|s| s.rsplit_once('.').map(|(_, e)| e)).collect();
         // The extension each save above should suggest, in order.
         let want = [
-            "psd",                       // Save As untitled
-            "pcraft jpeg gif bmp psd",   // Save As opened .pcraft .jpeg .gif .bmp .dng
-            "psd",                       // Save a Copy
-            "png jpg webp tif tga",      // Export As
-            "png jpg gif webp",          // Quick Export
-            "gif png png jpg wbmp html", // Save for Web: gif png8 png24 jpeg wbmp, then with slices
-            "csv pcpresets",             // Measurement Log, Export Presets
+            "psd",                             // Save As untitled
+            "pcraft jpeg gif bmp psd mpo jps", // Save As preserves writable formats, including stereo pairs
+            "psd",                             // Save a Copy
+            "png jpg webp tif tga",            // Export As
+            "png jpg gif webp",                // Quick Export
+            "gif png png jpg wbmp html",       // Save for Web: gif png8 png24 jpeg wbmp, then with slices
+            "csv pcpresets",                   // Measurement Log, Export Presets
         ]
         .join(" ");
         assert_eq!(exts, want.split(' ').collect::<Vec<_>>());
