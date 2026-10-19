@@ -4385,7 +4385,7 @@ fn save_and_close_refuses_a_read_only_source() {
 #[test]
 fn batch_folder_includes_stereo_pairs_case_insensitively() {
     let dir = tmp("stereo-batch");
-    let mut pair = Document::new("pair", Size::new(16, 8), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
+    let mut pair = Document::new("pair", photocraft_geom::Size::new(16, 8), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
     pair.stereo = true;
     let mut wanted = Vec::new();
     for name in ["a.MPO", "b.JpS"] {
@@ -4399,7 +4399,7 @@ fn batch_folder_includes_stereo_pairs_case_insensitively() {
         let mut s = Session::new();
         s.execute("file.open", json!({"path": path})).unwrap();
         assert!(doc(&s).stereo);
-        assert_eq!(doc(&s).size, Size::new(16, 8));
+        assert_eq!(doc(&s).size, photocraft_geom::Size::new(16, 8));
     }
     std::fs::remove_dir_all(dir).unwrap();
 }
