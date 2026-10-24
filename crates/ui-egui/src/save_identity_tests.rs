@@ -307,7 +307,8 @@ fn layered_stereo_defaults_to_native_and_unmarked_exports_stay_copies() {
     app.poll_file_dialog(&ctx, None);
     assert!(matches!(&requests.borrow()[0], crate::file_dialog::FileDialogRequest::Save { suggested } if suggested.ends_with("pair.pcraft")));
     for path in ["copy.psd", "copy.psb", "copy.ora", "copy.jpg"] {
-        let result = app.save_as(Some(path.into())).unwrap();
+        // Answer JPEG Options, as a completed Save As does on current main.
+        let result = menus::invoke(&mut app, &ctx, "file.saveAs", json!({"path": path, "jpegFormat": "baseline"})).unwrap();
         assert!(result["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("stereo metadata")), "{path}");
         assert_eq!(identity(&app), before, "{path} cannot mark the stereo document saved");
     }
