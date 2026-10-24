@@ -18,10 +18,10 @@ mod recovery_tests;
 /// Photoshop brushes (.abr), gradients (.grd), layer styles (.asl), swatches (.aco, .act, .ase) and keyboard shortcut sets
 /// (.kys), which go to the preset libraries and Edit › Keyboard Shortcuts.
 const OPEN_EXTS: &[&str] = &[
-    "pcraft", "pdn", "ora", "xcf", "xcfgz", "gz", "kra", "krz", "psd", "psb", "psdt", "png", "jpg", "jpeg", "mpo", "jps", "tif", "tiff", "webp", "gif", "bmp", "tga", "ico",
-    "qoi", "exr", "hdr", "pbm", "pgm", "ppm", "pam", "pfm", "pcx", "dds", "xpm", "fits", "fit", "fts", "dpx", "cin", "dcm", "dicom", "dc3", "iff", "lbm",
-    "ilbm", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw", "arw", "pef", "orf", "rw2", "raf", "abr", "grd", "asl", "svg", "svgz", "aco", "act",
-    "ase", "kys", "af", "afdesign", "afphoto", "afpub",
+    "pcraft", "pdn", "ora", "xcf", "xcfgz", "gz", "kra", "krz", "psd", "psb", "psdt", "png", "jpg", "jpeg", "mpo", "jps", "tif", "tiff", "webp", "gif", "bmp",
+    "tga", "ico", "qoi", "exr", "hdr", "pbm", "pgm", "ppm", "pam", "pfm", "pcx", "dds", "xpm", "fits", "fit", "fts", "dpx", "cin", "dcm", "dicom", "dc3",
+    "iff", "lbm", "ilbm", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw", "arw", "pef", "orf", "rw2", "raf", "abr", "grd", "asl", "svg", "svgz",
+    "aco", "act", "ase", "kys", "af", "afdesign", "afphoto", "afpub",
 ];
 const SVG_EXTS: &[&str] = &["svg", "svgz"];
 
@@ -1049,7 +1049,7 @@ mod tests {
 
     #[test]
     fn stereo_save_filters_select_writable_pair_containers() {
-        let mut doc = Document::new("pair", Size::new(16, 8), ColorMode::Rgb, SampleType::U8);
+        let mut doc = Document::new("pair", photocraft_geom::Size::new(16, 8), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
         doc.stereo = true;
         for (ext, label) in [("mpo", "MPO (stereo pair)"), ("jps", "JPS (stereo pair)")] {
             let path = format!("pair.{ext}");
