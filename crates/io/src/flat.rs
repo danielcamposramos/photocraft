@@ -331,6 +331,7 @@ pub fn import_stereo(name: &str, bytes: &[u8], layout: &codecs::stereo::StereoLa
     let img = codecs::stereo::decode_pair(bytes, layout, &codecs::DecodeOptions::default())?;
     let mut result = image_to_document(name, &img)?;
     result.document.stereo = true;
+    result.document.stereo_pixel_aspect = img.meta.pixel_aspect;
     result.document.file_encoding = file_encoding(bytes);
     if codecs::detect(bytes) == Some(Format::Png) {
         // Pixels have been normalized, so the original cross-fuse byte no longer describes them.
@@ -3061,6 +3062,7 @@ pub(crate) fn export_stereo(doc: &Document, ext: &str, opts: &ExportOptions, ctl
     let mut img = document_to_image_for_with_renderer(doc, &mut warnings, false, false, ctl, None)?;
     ctl.check().map_err(|_| IoError::Cancelled)?;
     strip_xmp(&mut img.meta, opts);
+    img.meta.pixel_aspect = doc.stereo_pixel_aspect;
     let img = prepare_flat(img, format, &mut warnings)?;
     append_fidelity_warnings(&img, format, opts, &mut warnings)?;
     let bytes = match ext {

@@ -127,3 +127,21 @@ fn layered_exports_report_lost_stereo_identity() {
     assert!(out.warnings.is_empty());
     assert_pair(&import("out.pcraft", &out.bytes).unwrap().document, "native stereo save");
 }
+
+#[test]
+fn native_stereo_grids_and_pixel_shape_survive_every_pair_format() {
+    for par in [(2, 1), (1, 2), (4, 3)] {
+        let mut source = pair();
+        source.meta.pixel_aspect = Some(par);
+        let bytes = stereo::encode_png(&source, &EncodeOptions::default()).unwrap();
+        let doc = import("native.png", &bytes).unwrap().document;
+        assert_pair(&doc, "native grid");
+        assert_eq!(doc.stereo_pixel_aspect, Some(par));
+        for ext in ["pcraft", "png", "mpo", "jps"] {
+            let out = export(&doc, &format!("out.{ext}"), &ExportOptions::default()).unwrap();
+            let back = import(&format!("out.{ext}"), &out.bytes).unwrap().document;
+            assert_pair(&back, ext);
+            assert_eq!(back.stereo_pixel_aspect, Some(par), "{ext} pixel shape {par:?}");
+        }
+    }
+}

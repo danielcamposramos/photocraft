@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 struct Log {
     /// (width, height, buffer length, stereo, first pixel) of every picture shown
     shown: Vec<(usize, usize, usize, bool, [u8; 4])>,
+    pixel_aspects: Vec<(u32, u32)>,
     allocated: bool,
     open: bool,
     closes: usize,
@@ -33,6 +34,7 @@ impl StereoViewHost for Recorder {
             return Err("the native window handle was not released".into());
         }
         let first = [frame.rgba[0], frame.rgba[1], frame.rgba[2], frame.rgba[3]];
+        log.pixel_aspects.push(frame.pixel_aspect);
         log.shown.push((frame.width, frame.height, frame.rgba.len(), frame.stereo, first));
         log.open = true;
         log.allocated = true;
@@ -186,4 +188,15 @@ fn closing_the_last_document_turns_the_command_off() {
     d.app().run("file.close", json!({"discard": true})).unwrap();
     d.frames(6);
     assert_eq!(d.item(), (false, Some(false)));
+}
+
+#[test]
+fn half_width_samples_reach_the_host_without_canvas_expansion() {
+    let mut d = Driver::new(true);
+    d.open("Half width", 64, 36, true, "#336699");
+    Arc::make_mut(&mut d.app().session.active_mut().unwrap().doc).stereo_pixel_aspect = Some((2, 1));
+    d.invoke("view.stereoView").unwrap();
+    let log = d.log.lock().unwrap();
+    assert_eq!(log.shown[0], (64, 36, 64 * 36 * 4, true, [0x33, 0x66, 0x99, 0xff]));
+    assert_eq!(log.pixel_aspects, [(2, 1)]);
 }

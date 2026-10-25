@@ -1,7 +1,7 @@
-//! View ▸ Stereo View on the desktop: the window `photocraft-stereo-window` opens, declared to
+//! View ▸ Stereo View on the desktop: the window `craft-stereo-window` opens, declared to
 //! the desktop while it shows a stereo pair.
 
-use photocraft_stereo_window::{Picture, StereoWindow};
+use craft_stereo_window::{Picture, StereoWindow};
 use photocraft_ui_egui::stereo_view::{StereoFrame, StereoViewHost};
 
 pub struct Host {
@@ -17,7 +17,9 @@ impl Host {
 
 impl StereoViewHost for Host {
     fn show(&mut self, frame: StereoFrame) -> Result<(), String> {
-        let picture = Picture::new(frame.width, frame.height, frame.rgba, frame.stereo).map_err(|e| e.to_string())?;
+        let picture = Picture::new(frame.width, frame.height, frame.rgba, frame.stereo)
+            .and_then(|p| p.with_pixel_aspect_ratio(frame.pixel_aspect.0, frame.pixel_aspect.1))
+            .map_err(|e| e.to_string())?;
         if self.window.is_none() {
             self.window = Some(StereoWindow::open("PhotoCraft Stereo View", self.app_id).map_err(|e| e.to_string())?);
         }

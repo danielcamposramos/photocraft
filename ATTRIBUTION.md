@@ -181,3 +181,8 @@ longer used or shipped.
 | `hayro-interpret 0.7.0 / assets/Foxit*.pfb` (13 standard-14 font files) | Foxit Software Inc. / PDFium Authors | <https://github.com/storytold/craft-libs/tree/c5a1cbfb5f9049f9270955caffb5bee5997aebf7/vendor/hayro-interpret/assets> | BSD-3-Clause | Renders non-embedded standard-14 PDF fonts |
 | `hayro-interpret 0.7.0 / assets/CGATS001Compat-v2-micro.icc` | Clinton Ingram (saucecontrol/Compact-ICC-Profiles) | <https://github.com/storytold/craft-libs/tree/c5a1cbfb5f9049f9270955caffb5bee5997aebf7/vendor/hayro-interpret/assets> | CC0-1.0 | Default CMYK colour conversion |
 | `hayro-cmap 0.1.0 / assets/cmaps.brotli` | Adobe | <https://github.com/storytold/craft-libs/tree/c5a1cbfb5f9049f9270955caffb5bee5997aebf7/vendor/hayro-cmap/assets> | BSD-3-Clause | Character-code mapping for CJK PDFs |
+
+## Shared stereo protocol
+
+The `craft-stereo-window` dependency contains the unchanged `kde-stereo-content-v1.xml` protocol by Daniel Campos Ramos from https://github.com/Sparky-OS/plasma-wayland-protocols, under MIT-CMU.
+The complete copyright and permission notice is retained in NOTICE.

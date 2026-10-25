@@ -118,3 +118,26 @@ Neither the name of Adobe nor the names of its contributors may be used to endor
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Compact ICC profile: CC0 1.0 Universal (public domain dedication), by Clinton Ingram (saucecontrol/Compact-ICC-Profiles).
+
+Shared craft-stereo-window protocol:
+crates/stereo-window/protocols/kde-stereo-content-v1.xml:
+Copyright (c) 2026 Daniel Campos Ramos.
+Licensed under MIT-CMU; the copyright and permission notice follows.
+
+Copyright (c) 2026 Daniel Campos Ramos. By obtaining, using, and/or copying this software and/or
+its associated documentation, you agree that you have read, understood, and
+will comply with the following terms and conditions:
+
+Permission to use, copy, modify, and distribute this software and its associated
+documentation for any purpose and without fee is hereby granted, provided
+that the above copyright notice appears in all copies, and that both that
+copyright notice and this permission notice appear in supporting documentation,
+and that the name of the copyright holder not be used in advertising or publicity
+pertaining to distribution of the software without specific, written permission.
+
+THE COPYRIGHT HOLDER DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT
+SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM THE LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

@@ -254,16 +254,19 @@ fn jps_descriptor_layouts() {
     let separated = with_descriptor(&jpeg(&side_by_side(&r, &l, 8)), 0x0800_0201);
     // half width (bit 17): two squeezed 32-pixel eyes in a 64-pixel picture
     let squeezed = with_descriptor(&jpeg(&side_by_side(&filled(32, 48, RED), &filled(32, 48, BLUE), 0)), 0x0006_0201);
-    for (name, bytes) in [("parallel", parallel), ("over/under", over), ("separated", separated), ("squeezed", squeezed)] {
+    for (name, bytes) in [("parallel", parallel), ("over/under", over), ("separated", separated)] {
         assert_pair(&read(&bytes, false), (64, 48), name);
     }
-    // interleaved rows (01), left field first: even rows left, each eye stretched back to the
-    // picture's height. The eyes differ in brightness: JPEG's chroma subsampling would smear
+    let pair = read(&squeezed, false);
+    assert_pair(&pair, (32, 48), "native half-width samples");
+    assert_eq!(pair.meta.pixel_aspect, Some((2, 1)));
+    // Interleaved rows retain each field's rows at their stored height. The eyes differ in brightness: JPEG's chroma subsampling would smear
     // colours between single rows.
     let rows = with_descriptor(&jpeg(&picture(64, 96, |_, y| if y % 2 == 0 { [220; 3] } else { [30; 3] })), 0x0004_0101);
     assert_eq!(stereo::layout(&rows, false), Some(StereoLayout::Rows { first: FirstEye::Left }));
     let pair = read(&rows, false);
-    assert_eq!(pair.dimensions(), (128, 96));
+    assert_eq!(pair.dimensions(), (128, 48));
+    assert_eq!(pair.meta.pixel_aspect, Some((1, 2)));
     let (le, re) = (mean(&pair, 0, 64), mean(&pair, 64, 128));
     assert!(le[0] > 180 && re[0] < 70, "left {le:?} right {re:?}");
     // A monoscopic descriptor stays flat. Anaglyph is recognized, but must not silently
@@ -491,7 +494,7 @@ fn truncated_and_damaged_stereo_files_never_panic() {
 #[test]
 fn unsupported_jps_scaling_is_not_silently_discarded() {
     let image = jpeg(&sbs(32, 16));
-    for descriptor in [0x0001_0201, 0x0002_0301, 0x0001_0101, 0x0002_0101, 0x0000_0901] {
+    for descriptor in [0x0002_0301, 0x0001_0101, 0x0002_0101, 0x0000_0901] {
         let file = with_descriptor(&image, descriptor);
         let layout = stereo::layout(&file, true).unwrap();
         assert_eq!(layout, StereoLayout::UnsupportedJps { descriptor });
@@ -500,7 +503,7 @@ fn unsupported_jps_scaling_is_not_silently_discarded() {
 }
 
 #[test]
-fn packed_geometry_and_expanded_limits_are_checked_before_splitting() {
+fn packed_geometry_and_native_limits_are_checked_before_splitting() {
     let ordinary = png(&filled(9, 7, RED));
     for layout in [
         StereoLayout::SideBySide { first: FirstEye::Left, gap: 0, squeezed: false },
@@ -510,7 +513,7 @@ fn packed_geometry_and_expanded_limits_are_checked_before_splitting() {
         assert!(stereo::decode_pair(&ordinary, &layout, &DecodeOptions::default()).is_err());
     }
     let packed = jpeg(&sbs(32, 16));
-    let layout = StereoLayout::SideBySide { first: FirstEye::Left, gap: 0, squeezed: true };
+    let layout = StereoLayout::OverUnder { first: FirstEye::Left, gap: 0, squeezed: true };
     let opts = DecodeOptions { limits: Limits { max_width: 100, ..Limits::default() }, ..DecodeOptions::default() };
     assert!(matches!(stereo::decode_pair(&packed, &layout, &opts), Err(CodecError::LimitExceeded(_))));
 }
@@ -615,4 +618,21 @@ fn multi_view_mpo_is_not_silently_reduced_to_two_views() {
     let layout = stereo::layout(&file, false).unwrap();
     assert!(matches!(layout, StereoLayout::UnsupportedMpo { .. }));
     assert!(matches!(stereo::decode_pair(&file, &layout, &DecodeOptions::default()), Err(CodecError::Unsupported { .. })));
+}
+
+#[test]
+fn a_quarter_turn_inverts_pixel_shape_without_expanding_an_eye() {
+    let mut source = sbs(32, 16);
+    source.meta.pixel_aspect = Some((2, 1));
+    let encoded = stereo::encode_png(&source, &EncodeOptions::default()).unwrap();
+    let mut metadata = exif();
+    metadata[18..20].copy_from_slice(&6u16.to_le_bytes());
+    let encoded = with_packed_exif(&encoded, &metadata, true);
+    let got = read(&encoded, false);
+    assert_eq!(got.dimensions(), (32, 32));
+    assert_eq!(got.meta.pixel_aspect, Some((1, 2)));
+    let back = read(&stereo::encode_png(&got, &EncodeOptions::default()).unwrap(), false);
+    assert_eq!(back.dimensions(), got.dimensions());
+    assert_eq!(back.data(), got.data());
+    assert_eq!(back.meta.pixel_aspect, got.meta.pixel_aspect);
 }

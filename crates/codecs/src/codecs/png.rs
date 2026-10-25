@@ -586,6 +586,9 @@ impl<B: AsRef<[u8]>> PngDecodeRows<B> {
         {
             meta.dpi = Some((dpi_of_ppm(d.xppu), dpi_of_ppm(d.yppu)));
         }
+        if let Some(d) = info.pixel_dims.filter(|d| d.xppu > 0 && d.yppu > 0 && d.xppu != d.yppu) {
+            meta.pixel_aspect = Some((d.yppu, d.xppu));
+        }
         meta.text = std::mem::take(&mut self.text.plain);
         meta.text.extend(std::mem::take(&mut self.text.compressed));
         meta.text.extend(std::mem::take(&mut self.text.international));
@@ -1115,6 +1118,11 @@ fn start<W: Write>(
             info.pixel_dims =
                 Some(png::PixelDimensions { xppu: (x / METERS_PER_INCH).round() as u32, yppu: (y / METERS_PER_INCH).round() as u32, unit: png::Unit::Meter });
         }
+    }
+    if let Some((n, d)) = meta.pixel_aspect.filter(|(n, d)| *n > 0 && *d > 0 && n != d)
+        && !meta.dpi.is_some_and(|(x, y)| (f64::from(y) / f64::from(x) - f64::from(n) / f64::from(d)).abs() < 1e-6)
+    {
+        info.pixel_dims = Some(png::PixelDimensions { xppu: d, yppu: n, unit: png::Unit::Unspecified });
     }
     let mut encoder = png::Encoder::with_info(out, info).map_err(|e| CodecError::encode(F, e))?;
     encoder.set_compression(match opts.png_compression {
