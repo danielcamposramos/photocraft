@@ -137,6 +137,8 @@ pub struct Metadata {
     pub xmp: Option<String>,
     /// Horizontal and vertical resolution in dots per inch.
     pub dpi: Option<(f32, f32)>,
+    /// Source pixel width/height, independent of the stored sample grid.
+    pub pixel_aspect: Option<(u32, u32)>,
     /// Free-form key/value text (PNG tEXt/iTXt, TIFF ASCII tags).
     pub text: Vec<(String, String)>,
     /// Photoshop image resources (`8BIM` resource blocks): TIFF tag 34377. Kept opaque here;
@@ -152,6 +154,7 @@ impl Metadata {
         self.exif.is_none()
             && self.xmp.is_none()
             && self.dpi.is_none()
+            && self.pixel_aspect.is_none()
             && self.text.is_empty()
             && self.photoshop_resources.is_none()
             && self.photoshop_layers.is_none()

@@ -266,6 +266,7 @@ pub(crate) fn doc_m(d: &Document, sink: &mut dyn Sink) -> DocM {
         text_styles: d.text_styles.clone(),
         slices: d.slices.clone(),
         stereo: d.stereo,
+        stereo_pixel_aspect: d.stereo_pixel_aspect,
     }
 }
 
@@ -668,6 +669,7 @@ impl Loader<'_> {
             text_styles: m.text_styles.clone(),
             slices,
             stereo: m.stereo,
+            stereo_pixel_aspect: m.stereo_pixel_aspect,
         })
     }
 

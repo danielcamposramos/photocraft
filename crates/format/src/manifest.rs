@@ -105,6 +105,8 @@ pub struct DocM {
     /// The canvas is a stereo pair, full side by side (`Document::stereo`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stereo: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stereo_pixel_aspect: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

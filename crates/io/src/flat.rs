@@ -93,6 +93,7 @@ pub fn import_stereo(name: &str, bytes: &[u8], layout: &codecs::stereo::StereoLa
     let img = codecs::stereo::decode_pair(bytes, layout, &codecs::DecodeOptions::default())?;
     let mut result = image_to_document(name, &img)?;
     result.document.stereo = true;
+    result.document.stereo_pixel_aspect = img.meta.pixel_aspect;
     result.document.file_encoding = file_encoding(bytes);
     if codecs::detect(bytes) == Some(Format::Png) {
         // Pixels have been normalized, so the original cross-fuse byte no longer describes them.
@@ -696,7 +697,8 @@ pub(crate) fn export_stereo(doc: &Document, ext: &str, opts: &ExportOptions, ctl
         return Err(IoError::Unsupported("MPO and JPS require a stereo document".into()));
     }
     let format = if ext == "png" { Format::Png } else { Format::Jpeg };
-    let (img, mut warnings) = flat_image(doc, format, opts, ctl)?;
+    let (mut img, mut warnings) = flat_image(doc, format, opts, ctl)?;
+    img.meta.pixel_aspect = doc.stereo_pixel_aspect;
     append_fidelity_warnings(&img, format, opts, &mut warnings)?;
     let bytes = match ext {
         "mpo" => codecs::stereo::encode_mpo(&img, &opts.encode)?,

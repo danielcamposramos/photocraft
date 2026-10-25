@@ -926,6 +926,8 @@ pub struct Document {
     /// The canvas holds both stereo views side by side, left eye first, without packing padding.
     /// Set when importing MPO, JPS or PNG sTER; persisted in the native document.
     pub stereo: bool,
+    /// Width/height of a stereo source pixel, without resampling the canvas.
+    pub stereo_pixel_aspect: Option<(u32, u32)>,
 }
 
 /// The encoder settings a document's file was opened or saved with: what File › Save and the
@@ -995,6 +997,7 @@ impl Document {
             timeline: None,
             file_encoding: FileEncoding::default(),
             stereo: false,
+            stereo_pixel_aspect: None,
         }
     }
 

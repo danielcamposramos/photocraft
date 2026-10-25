@@ -34,6 +34,7 @@ pub(crate) struct JpegMeta {
     pub exif: Option<Vec<u8>>,
     pub xmp: Option<String>,
     pub dpi: Option<(f32, f32)>,
+    pub pixel_aspect: Option<(u32, u32)>,
     /// The APP13 Photoshop image resource blocks (`8BIM` ...), segments joined, without the header.
     pub photoshop: Option<Vec<u8>>,
     pub adobe_transform: Option<u8>,
@@ -76,6 +77,9 @@ pub(crate) fn scan_metadata(b: &[u8]) -> JpegMeta {
                 let x = u16::from_be_bytes([seg[8], seg[9]]) as f32;
                 let y = u16::from_be_bytes([seg[10], seg[11]]) as f32;
                 if x > 0.0 && y > 0.0 {
+                    if x != y {
+                        m.pixel_aspect = Some((y as u32, x as u32));
+                    }
                     jfif_dpi = match unit {
                         1 => Some((x, y)),
                         2 => Some((x * 2.54, y * 2.54)),
@@ -249,7 +253,8 @@ pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError>
     }
     let mut img = Image::from_raw(w, h, layout, SampleType::U8, px)?;
     img.icc = meta.icc;
-    img.meta = Metadata { exif: meta.exif, xmp: meta.xmp, dpi: meta.dpi, photoshop_resources: meta.photoshop, ..Default::default() };
+    img.meta =
+        Metadata { exif: meta.exif, xmp: meta.xmp, dpi: meta.dpi, pixel_aspect: meta.pixel_aspect, photoshop_resources: meta.photoshop, ..Default::default() };
     if end == DataEnd::Truncated {
         img.warnings.push(DecodeWarning::Truncated { format: F });
     }
@@ -321,6 +326,24 @@ pub(crate) fn encode(src: &Image, plan: Plan, opts: &EncodeOptions) -> Result<Ve
     enc.encode(img.data(), w16, h16, ct).map_err(e)?;
     if img.layout() == ChannelLayout::Cmyk {
         strip_jfif_app0(&mut out);
+    }
+    if let Some((n, d)) = img.meta.pixel_aspect.filter(|(n, d)| *n > 0 && *d > 0)
+        && !img.meta.dpi.is_some_and(|(x, y)| (f64::from(y) / f64::from(x) - f64::from(n) / f64::from(d)).abs() < 1e-6)
+    {
+        let mut x = n;
+        let mut y = d;
+        while y != 0 {
+            (x, y) = (y, x % y);
+        }
+        let (n, d) = (n / x, d / x);
+        let n = u16::try_from(n).map_err(|_| CodecError::encode(F, "pixel aspect exceeds JFIF density range"))?;
+        let d = u16::try_from(d).map_err(|_| CodecError::encode(F, "pixel aspect exceeds JFIF density range"))?;
+        if out.get(6..11) != Some(b"JFIF\0") {
+            return Err(CodecError::encode(F, "JPEG encoder omitted JFIF pixel geometry"));
+        }
+        out[13] = 0;
+        out[14..16].copy_from_slice(&d.to_be_bytes());
+        out[16..18].copy_from_slice(&n.to_be_bytes());
     }
     Ok(out)
 }

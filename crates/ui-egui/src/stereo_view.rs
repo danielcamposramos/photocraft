@@ -8,7 +8,7 @@
 //! of its own: one format goes out, declared once, and only while a stereo picture is shown.
 //!
 //! The window belongs to the host ([`StereoViewHost`], `Services::stereo_view`): the desktop app
-//! implements it with `photocraft-stereo-window`; hosts without one (the web) leave the command
+//! implements it with `craft-stereo-window`; hosts without one (the web) leave the command
 //! disabled.
 
 use std::sync::Arc;
@@ -25,6 +25,7 @@ pub struct StereoFrame {
     pub rgba: Arc<[u8]>,
     /// The picture holds a stereo pair.
     pub stereo: bool,
+    pub pixel_aspect: (u32, u32),
 }
 
 /// A window the host shows the stereo picture in.
@@ -110,7 +111,8 @@ fn step(app: &mut PhotocraftApp, ctx: &egui::Context, host: &mut dyn StereoViewH
         return;
     }
     let img = render();
-    let picture = StereoFrame { width: img.width as usize, height: img.height as usize, rgba: Arc::from(img.pixels), stereo };
+    let pixel_aspect = app.session.active().and_then(|d| d.doc.stereo_pixel_aspect).unwrap_or((1, 1));
+    let picture = StereoFrame { pixel_aspect, width: img.width as usize, height: img.height as usize, rgba: Arc::from(img.pixels), stereo };
     match host.show(picture) {
         Ok(()) => {
             app.stereo_view.opened = true;

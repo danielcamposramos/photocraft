@@ -343,6 +343,7 @@ impl Image {
         }
         if swap {
             meta.dpi = meta.dpi.map(|(x, y)| (y, x));
+            meta.pixel_aspect = meta.pixel_aspect.map(|(x, y)| (y, x));
         }
         let mut out = Image::from_raw(ow as u32, oh as u32, layout, sample, data)?.with_icc(self.icc).with_meta(meta);
         out.warnings = self.warnings;

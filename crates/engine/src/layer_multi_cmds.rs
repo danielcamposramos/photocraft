@@ -815,7 +815,8 @@ fn doc_pixels_equal(a: &Document, b: &Document) -> bool {
         variables: _,
         timeline: _,
         file_encoding: _,
-        stereo: _, // describes the two views; does not alter the full-SBS canvas pixels
+        stereo: _,              // describes the two views; does not alter the full-SBS canvas pixels
+        stereo_pixel_aspect: _, // display geometry; the native sample grid is unchanged
     } = a;
     *size == b.size
         && resolution_dpi.to_bits() == b.resolution_dpi.to_bits()
@@ -919,6 +920,7 @@ pub fn selection_only_change(a: &Document, b: &Document) -> bool {
         timeline,
         file_encoding,
         stereo,
+        stereo_pixel_aspect,
     } = a;
     // The ignored fields above are the pixel ones `pixels_equal_with` already compares.
     pixels_equal_with(a, b, video_frames_equal)
@@ -943,6 +945,7 @@ pub fn selection_only_change(a: &Document, b: &Document) -> bool {
         && *timeline == b.timeline
         && *file_encoding == b.file_encoding
         && *stereo == b.stereo
+        && *stereo_pixel_aspect == b.stereo_pixel_aspect
 }
 
 /// Pixels a single history step can have changed between `a` and `b` (the documents on either

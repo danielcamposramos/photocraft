@@ -85,6 +85,9 @@ pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError>
     {
         meta.dpi = Some((dpi_of_ppm(d.xppu), dpi_of_ppm(d.yppu)));
     }
+    if let Some(d) = info.pixel_dims.filter(|d| d.xppu > 0 && d.yppu > 0 && d.xppu != d.yppu) {
+        meta.pixel_aspect = Some((d.yppu, d.xppu));
+    }
     drop(reader);
     let end = usize::try_from(input.position()).map_err(|_| err("invalid PNG reader position"))?;
     let consumed = bytes.get(..end).ok_or_else(|| err("invalid PNG reader position"))?;
@@ -350,6 +353,11 @@ pub(crate) fn encode(src: &Image, plan: Plan, opts: &EncodeOptions) -> Result<Ve
         }
     }
 
+    if let Some((n, d)) = img.meta.pixel_aspect.filter(|(n, d)| *n > 0 && *d > 0)
+        && !img.meta.dpi.is_some_and(|(x, y)| (f64::from(y) / f64::from(x) - f64::from(n) / f64::from(d)).abs() < 1e-6)
+    {
+        info.pixel_dims = Some(png::PixelDimensions { xppu: d, yppu: n, unit: png::Unit::Unspecified });
+    }
     let mut out = Vec::new();
     {
         let mut encoder = png::Encoder::with_info(&mut out, info).map_err(|e| CodecError::encode(F, e))?;

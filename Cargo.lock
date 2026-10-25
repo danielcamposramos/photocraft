@@ -1241,6 +1241,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-stereo-window"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "smithay-client-toolkit 0.20.0",
+ "thiserror 2.0.21",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-scanner",
+ "x11rb",
+]
+
+[[package]]
 name = "craft-ui"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=5c874d51eeb3de70e735c8ce87a59a7dedd47675#5c874d51eeb3de70e735c8ce87a59a7dedd47675"
@@ -4644,6 +4657,7 @@ dependencies = [
  "async-io",
  "chrono",
  "core-graphics2",
+ "craft-stereo-window",
  "dispatch2",
  "eframe",
  "egui",
@@ -4666,7 +4680,6 @@ dependencies = [
  "photocraft-geom",
  "photocraft-io",
  "photocraft-raster",
- "photocraft-stereo-window",
  "photocraft-tablet",
  "photocraft-ui-egui",
  "resvg",
@@ -5010,19 +5023,6 @@ dependencies = [
  "zune-core 0.5.3",
  "zune-jpeg 0.5.15",
  "zune-jpegxl",
-]
-
-[[package]]
-name = "photocraft-stereo-window"
-version = "0.15.1"
-dependencies = [
- "log",
- "smithay-client-toolkit 0.20.0",
- "thiserror 2.0.21",
- "wayland-client",
- "wayland-protocols",
- "wayland-scanner",
- "x11rb",
 ]
 
 [[package]]
