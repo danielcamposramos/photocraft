@@ -9757,6 +9757,7 @@ name = "xtask"
 version = "0.20.1"
 dependencies = [
  "chrono",
+ "craft-i18n",
  "serde",
  "serde_json",
  "tempfile",
