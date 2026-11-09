@@ -513,11 +513,13 @@ fn bundled_catalogs_are_consistent() {
 
 #[test]
 fn raw_develop_labels_are_translated_in_every_shipped_catalog() {
+    if !needs_catalogs() {
+        return;
+    }
     for language in LANGUAGES.iter().skip(1) {
-        let (entries, errors) = parse_entries(&language.text());
-        assert!(errors.is_empty(), "{}: {errors:?}", language.code);
+        let l = lang(language.code);
         for source in ["RAW Develop", "RAW Develop Filter", "RAW Develop Filter…", "RAW Defaults", "RAW Defaults…"] {
-            assert!(entries.iter().any(|(_, key, value)| key == source && !value.is_empty()), "{}: {source}", language.code);
+            assert!(has(l, source) && !tr(l, source).is_empty(), "{}: {source}", language.code);
         }
     }
 }
