@@ -238,7 +238,9 @@ fn mpo_layout(bytes: &[u8], base: usize, data: &[u8]) -> Option<StereoLayout> {
         let size = usize::try_from(field(4)).ok()?;
         // the First Individual Image's offset is 0; the others count from the MP header (§5.2.3.3.3)
         let start = if i == 0 { 0 } else { base.checked_add(usize::try_from(field(8)).ok()?)? };
-        let range = start..start.checked_add(size)?;
+        // Keep an in-file view whose advertised end is truncated: its decoder must report
+        // damage instead of silently making a two-view file look like an ordinary JPEG.
+        let range = start..start.saturating_add(size).min(bytes.len());
         let Some(image) = bytes.get(range.clone()).filter(|b| b.starts_with(&[0xFF, 0xD8])) else { continue };
         let number = if i == 0 {
             individual_number(&t, attributes)

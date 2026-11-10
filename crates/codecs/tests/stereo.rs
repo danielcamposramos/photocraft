@@ -636,3 +636,16 @@ fn a_quarter_turn_inverts_pixel_shape_without_expanding_an_eye() {
     assert_eq!(back.data(), got.data());
     assert_eq!(back.meta.pixel_aspect, got.meta.pixel_aspect);
 }
+
+#[test]
+fn an_mpo_entry_extending_past_eof_is_still_a_damaged_stereo_view() {
+    let eye = jpeg(&filled(64, 48, RED));
+    let mut bytes = mpo(&[(&eye, DISPARITY | REPRESENTATIVE, Some(1)), (&eye, DISPARITY, Some(2))]);
+    bytes.truncate(bytes.len() - 24);
+    let layout = stereo::layout(&bytes, false).expect("the second image starts in the file");
+    let StereoLayout::Mpo { right, .. } = &layout else { panic!("damaged pair must remain a pair") };
+    assert_eq!(right.end, bytes.len(), "the decoder receives the available second view");
+    if let Ok(image) = stereo::decode_pair(&bytes, &layout, &DecodeOptions::default()) {
+        assert!(!image.warnings.is_empty(), "a recovered truncated eye must report its missing data");
+    }
+}

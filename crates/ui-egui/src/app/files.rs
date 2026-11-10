@@ -230,7 +230,9 @@ impl PhotocraftApp {
         // An OpenRaster file only when it holds the whole document (#3806): else PSD is offered.
         let holds_ora = st.path.as_deref().is_some_and(|p| photocraft_engine::file_cmds::holds_at(&st.doc, p));
         let writable = ext.is_some_and(|e| {
-            if photocraft_io::stereo_metadata_loss(&st.doc, &e).is_some() { return false; }
+            if photocraft_io::stereo_metadata_loss(&st.doc, &e).is_some() {
+                return false;
+            }
             matches!(e.as_str(), photocraft_format::EXTENSION | "psd" | "psb" | "tif" | "tiff")
                 || (e == "ora" && holds_ora)
                 || (flat && (photocraft_codecs::from_extension(&e).is_some_and(|f| f.caps().write) || (st.doc.stereo && matches!(e.as_str(), "mpo" | "jps"))))
@@ -455,7 +457,9 @@ impl PhotocraftApp {
                 !photocraft_engine::file_cmds::saves_in_place(p)
                     && photocraft_io::stereo_metadata_loss(&st.doc, p).is_none()
                     && plain_raster(&st.doc).is_some()
-                    && photocraft_engine::file_cmds::extension(p).is_some_and(|e| photocraft_codecs::from_extension(&e).is_some_and(|f| f.caps().write) || (st.doc.stereo && matches!(e.as_str(), "mpo" | "jps")))
+                    && photocraft_engine::file_cmds::extension(p).is_some_and(|e| {
+                        photocraft_codecs::from_extension(&e).is_some_and(|f| f.caps().write) || (st.doc.stereo && matches!(e.as_str(), "mpo" | "jps"))
+                    })
             };
             let path = st.path.clone().filter(|p| photocraft_engine::file_cmds::holds_at(&st.doc, p) || flat_own(p)).ok_or(
                 "Save writes back only to the document's own PSD, PSB, .pcraft or OpenRaster file (OpenRaster only when it holds everything), or to its own flat file while the document is a single plain layer",
@@ -517,7 +521,9 @@ impl PhotocraftApp {
         let tiff = |p: &str| matches!(photocraft_engine::file_cmds::extension(p).as_deref(), Some("tif" | "tiff"));
         let holds = photocraft_engine::file_cmds::holds_at(&st.doc, path) || tiff(path);
         let lives_layered = st.path.as_deref().is_some_and(|p| photocraft_engine::file_cmds::saves_in_place(p) || tiff(p));
-        Ok(photocraft_io::stereo_metadata_loss(&st.doc, path).is_some() || tiff_layers == Some(false) || (!holds && (plain_raster(&st.doc).is_none() || lives_layered)))
+        Ok(photocraft_io::stereo_metadata_loss(&st.doc, path).is_some()
+            || tiff_layers == Some(false)
+            || (!holds && (plain_raster(&st.doc).is_none() || lives_layered)))
     }
 
     /// Writes the active document to a known path. `tiff_layers` is the TIFF Options answer:

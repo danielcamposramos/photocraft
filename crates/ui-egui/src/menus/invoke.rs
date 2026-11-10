@@ -677,7 +677,7 @@ fn invoke_view_command(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, p
         }
         "view.stereoView" => {
             let on = params.get("enabled").and_then(Value::as_bool).unwrap_or(!app.stereo_view.wanted);
-            crate::stereo_view::toggle(app, on).map(|()| json!({"stereoView": app.stereo_view.wanted}))
+            Some(crate::stereo_view::toggle(app, on).map(|()| json!({"stereoView": app.stereo_view.wanted})))
         }
         "view.rulers" | "view.show.grid" | "view.show.guides" | "view.snap" | "view.lockGuides" => {
             let extras = &mut app.ui.extras;

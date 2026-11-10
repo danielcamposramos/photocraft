@@ -327,9 +327,19 @@ fn cicp_profile(img: &Image) -> Option<Arc<Vec<u8>>> {
 }
 
 /// Opens a stereo file as a full side-by-side canvas, left eye first.
-pub fn import_stereo(name: &str, bytes: &[u8], layout: &codecs::stereo::StereoLayout) -> Result<ImportResult, IoError> {
-    let img = codecs::stereo::decode_pair(bytes, layout, &codecs::DecodeOptions::default())?;
-    let mut result = image_to_document(name, &img)?;
+pub(crate) fn import_stereo(
+    name: &str,
+    bytes: &[u8],
+    layout: &codecs::stereo::StereoLayout,
+    opts: &crate::ImportOptions,
+    ctl: &Interrupt,
+) -> Result<ImportResult, IoError> {
+    ctl.check().map_err(|_| IoError::Cancelled)?;
+    let img = codecs::stereo::decode_pair(bytes, layout, &codecs::DecodeOptions { limits: decode_limits(opts), ..Default::default() });
+    ctl.check().map_err(|_| IoError::Cancelled)?;
+    let img = img?;
+    ctl.progress(0.6);
+    let mut result = image_to_document_with(name, &img, ctl)?;
     result.document.stereo = true;
     result.document.stereo_pixel_aspect = img.meta.pixel_aspect;
     result.document.file_encoding = file_encoding(bytes);
@@ -2277,6 +2287,20 @@ fn cmyk_image_to_srgb(img: &Image) -> Result<Image, IoError> {
     Ok(Image::from_normalized(w, h, layout, sample, &out)?.with_icc(Some(dst.to_bytes().to_vec())).with_meta(img.meta.clone()))
 }
 
+/// Render Duotone display inks in RGB before a flat serializer reads the canvas.
+fn duotone_display_rgb(doc: &Document) -> Option<Document> {
+    if doc.mode != ColorMode::Duotone {
+        return None;
+    }
+    let inks = doc.duotone.as_ref()?;
+    let mut shown = doc.clone();
+    shown.layers.push(photocraft_doc::Layer::new("Duotone", photocraft_doc::LayerContent::Adjustment(inks.display_adjustment())));
+    shown.mode = ColorMode::Rgb;
+    shown.icc_profile = None;
+    shown.duotone = None;
+    Some(shown)
+}
+
 /// Indexed Color → PNG-8 or an 8-bit BMP with its colour table; Duotone → the inks rendered as RGB.
 fn export_mode_specific(doc: &Document, format: Format, opts: &ExportOptions) -> Result<Option<ExportResult>, IoError> {
     match doc.mode {
@@ -2320,11 +2344,7 @@ fn export_mode_specific(doc: &Document, format: Format, opts: &ExportOptions) ->
         }
         ColorMode::Duotone => {
             let Some(d) = doc.duotone.as_ref() else { return Ok(None) };
-            let mut shown = doc.clone();
-            shown.layers.push(photocraft_doc::Layer::new("Duotone", photocraft_doc::LayerContent::Adjustment(d.display_adjustment())));
-            shown.mode = ColorMode::Rgb;
-            shown.icc_profile = None;
-            shown.duotone = None;
+            let Some(shown) = duotone_display_rgb(doc) else { return Ok(None) };
             let mut r = export_flat(&shown, format, opts)?;
             r.warnings.retain(|w| !w.contains("flattened"));
             r.warnings.push(format!("Duotone ({} inks) written as RGB", d.inks.len()));
@@ -3059,6 +3079,11 @@ pub(crate) fn export_stereo(doc: &Document, ext: &str, opts: &ExportOptions, ctl
     }
     let format = if ext == "png" { Format::Png } else { Format::Jpeg };
     let mut warnings = Vec::new();
+    let shown = duotone_display_rgb(doc);
+    if let Some(inks) = doc.duotone.as_ref().filter(|_| shown.is_some()) {
+        warnings.push(format!("Duotone ({} inks) written as RGB", inks.inks.len()));
+    }
+    let doc = shown.as_ref().unwrap_or(doc);
     let mut img = document_to_image_for_with_renderer(doc, &mut warnings, false, false, ctl, None)?;
     ctl.check().map_err(|_| IoError::Cancelled)?;
     strip_xmp(&mut img.meta, opts);

@@ -331,4 +331,3 @@ pub(crate) fn shown_rgba8(app: &mut PhotocraftApp, idx: usize) -> (photocraft_do
     };
     (id, key, stereo, render)
 }
-
