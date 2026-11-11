@@ -3085,6 +3085,10 @@ pub(crate) fn export_stereo(doc: &Document, ext: &str, opts: &ExportOptions, ctl
     }
     let doc = shown.as_ref().unwrap_or(doc);
     let mut img = document_to_image_for_with_renderer(doc, &mut warnings, false, false, ctl, None)?;
+    if shown.is_some() {
+        // As in ordinary Duotone export, the ink-rendering adjustment is not a lost user layer.
+        warnings.retain(|warning| !warning.contains("flattened"));
+    }
     ctl.check().map_err(|_| IoError::Cancelled)?;
     strip_xmp(&mut img.meta, opts);
     img.meta.pixel_aspect = doc.stereo_pixel_aspect;

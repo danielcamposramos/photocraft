@@ -269,12 +269,25 @@ fn stereo_exports_render_duotone_inks_like_ordinary_flat_export() {
     doc.stereo = true;
     for ext in ["mpo", "jps", "png"] {
         let out = export(&doc, &format!("inks.{ext}"), &ExportOptions::default()).unwrap();
+        assert!(out.warnings.iter().any(|warning| warning.contains("Duotone")), "{ext}: explain the ink-to-RGB conversion");
+        assert_eq!(
+            out.warnings.iter().any(|warning| warning.contains("flattened")),
+            plain.warnings.iter().any(|warning| warning.contains("flattened")),
+            "{ext}: an internal ink-rendering layer is not a lost document layer: {:?}",
+            out.warnings
+        );
         let layout = stereo::layout(&out.bytes, ext == "jps").unwrap();
         let image = stereo::decode_pair(&out.bytes, &layout, &Default::default()).unwrap().convert(ChannelLayout::Rgb, photocraft_codecs::SampleType::U8);
         assert_eq!(image.dimensions(), reference.dimensions());
         let max = image.data().iter().zip(reference.data()).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
-        assert!(max <= 5, "{ext}: rendered ink colors differ from flat export by {max}");
+        let limit = if ext == "png" { 0 } else { 5 };
+        assert!(max <= limit, "{ext}: rendered ink colors differ from flat export by {max}");
     }
+    let mut layered = Document::with_background("layers", Size::new(64, 16), ColorMode::Rgb, SampleType::U8, Color::rgba(0.5, 0.5, 0.5, 1.0));
+    layered.stereo = true;
+    layered.layers.push(photocraft_doc::Layer::new("Layer", layered.layers[0].content.clone()));
+    let out = export(&layered, "layers.png", &ExportOptions::default()).unwrap();
+    assert!(out.warnings.iter().any(|warning| warning.contains("flattened")), "real RGB layers still report flattening");
 }
 
 #[test]
