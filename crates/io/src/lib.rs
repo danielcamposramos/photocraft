@@ -1024,7 +1024,15 @@ fn import_stages(name: &str, bytes: &[u8], ctl: &photocraft_raster::Interrupt, o
         Route::Svg => svg::import_svg_with_group_depth(name, bytes, opts.max_group_depth),
         Route::Flat => {
             if let Some(layout) = photocraft_codecs::stereo::layout(bytes, has_extension(name, "jps")) {
-                flat::import_stereo(name, bytes, &layout)
+                match flat::import_stereo(name, bytes, &layout, opts, ctl) {
+                    Ok(result) => Ok(result),
+                    Err(IoError::Cancelled) => Err(IoError::Cancelled),
+                    Err(error) => {
+                        let mut result = flat::import_flat_with_options(name, bytes, opts, ctl)?;
+                        result.warnings.push(format!("stereo pair could not be read ({error}); opened as an ordinary image"));
+                        Ok(result)
+                    }
+                }
             } else {
                 flat::import_flat_with_options(name, bytes, opts, ctl)
             }
@@ -1116,7 +1124,9 @@ pub fn export_with_renderer(
     renderer: Option<&mut dyn BandRenderer>,
 ) -> Result<ExportResult, IoError> {
     let mut r = checked_stages(doc, name_or_ext, opts, ctl, renderer)?;
-    if let Some(loss) = stereo_metadata_loss(doc, name_or_ext) { r.warnings.push(loss.into()); }
+    if let Some(loss) = stereo_metadata_loss(doc, name_or_ext) {
+        r.warnings.push(loss.into());
+    }
     let bytes = r.encoded.into_bytes()?;
     ctl.check().map_err(|_| IoError::Cancelled)?;
     ctl.progress(1.0);
@@ -1286,7 +1296,7 @@ fn export_stages_with_renderer(
         return Ok(EncodedExport { encoded: Encoded::Psd(Box::new(file)), warnings });
     }
     if matches!(ext.as_str(), "mpo" | "jps") || (ext == "png" && doc.stereo) {
-        return flat::export_stereo(doc, &ext, opts, ctl);
+        return flat::export_stereo(doc, &ext, opts, ctl).map(EncodedExport::from);
     }
     let format = photocraft_codecs::from_extension(&ext).ok_or_else(|| IoError::UnknownFormat(name_or_ext.to_string()))?;
     if format == photocraft_codecs::Format::Tiff && opts.tiff_layers && tiff_layers::would_write_layers(doc) {

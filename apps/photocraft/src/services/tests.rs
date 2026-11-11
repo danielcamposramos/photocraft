@@ -277,7 +277,9 @@ fn every_save_dialog_leads_with_its_own_extension() {
     // Files in a format Save As can't write, like .dng, should suggest .psd instead.
     let _ = invoke(&mut app, "file.saveAs");
     for name in ["cat.pcraft", "cat.jpeg", "cat.gif", "cat.bmp", "cat.dng", "cat.mpo", "cat.jps"] {
-        app.session.active_mut().unwrap().path = Some(name.into());
+        let state = app.session.active_mut().unwrap();
+        state.path = Some(name.into());
+        Arc::make_mut(&mut state.doc).stereo = name.ends_with(".mpo") || name.ends_with(".jps");
         let _ = invoke(&mut app, "file.saveAs");
     }
     let _ = invoke(&mut app, "file.saveACopy");
@@ -302,13 +304,13 @@ fn every_save_dialog_leads_with_its_own_extension() {
     let exts: Vec<&str> = asked.iter().filter_map(|s| s.rsplit_once('.').map(|(_, e)| e)).collect();
     // The extension each save above should suggest, in order.
     let want = [
-        "psd",                            // Save As untitled
-        "pcraft jpeg gif bmp psd mpo jps",        // Save As opened .pcraft .jpeg .gif .bmp .dng
-        "psd",                            // Save a Copy
-        "png jpg webp tif tga",           // Export As
-        "png jpg gif webp",               // Quick Export
-        "gif png png jpg webp wbmp html", // Save for Web: gif png8 png24 jpeg webp wbmp, then with slices
-        "csv pcpresets",                  // Measurement Log, Export Presets
+        "psd",                             // Save As untitled
+        "pcraft jpeg gif bmp psd mpo jps", // Save As opened .pcraft .jpeg .gif .bmp .dng
+        "psd",                             // Save a Copy
+        "png jpg webp tif tga",            // Export As
+        "png jpg gif webp",                // Quick Export
+        "gif png png jpg webp wbmp html",  // Save for Web: gif png8 png24 jpeg webp wbmp, then with slices
+        "csv pcpresets",                   // Measurement Log, Export Presets
     ]
     .join(" ");
     assert_eq!(exts, want.split(' ').collect::<Vec<_>>());
@@ -323,7 +325,7 @@ fn every_save_dialog_leads_with_its_own_extension() {
 #[test]
 fn save_as_offers_only_writable_formats_including_ico() {
     // Layered formats, and PDF, are written by `photocraft-io`, not a codec.
-    let layered = ["psd", "psb", "pcraft", "ora", "pdf"];
+    let layered = ["psd", "psb", "pcraft", "ora", "pdf", "mpo", "jps"];
     for (name, exts) in SAVE_FILTERS {
         for ext in exts.iter().filter(|e| !layered.contains(e)) {
             let format = photocraft_codecs::from_extension(ext).unwrap_or_else(|| panic!("{name}: .{ext} is no known format"));
@@ -968,4 +970,17 @@ fn tiff_options_reach_the_written_file() {
     let info = photocraft_codecs::tiff_info(&bytes).unwrap();
     assert_eq!(info.pages.iter().map(|p| (p.width, p.compression)).collect::<Vec<_>>(), [(200, 5), (100, 5), (50, 5)]);
     assert!(!photocraft_codecs::decode(&bytes).unwrap().layout().has_alpha());
+}
+
+#[test]
+fn stereo_save_filters_select_writable_pair_containers() {
+    let mut doc = Document::new("pair", photocraft_geom::Size::new(16, 8), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
+    doc.stereo = true;
+    for (ext, label) in [("mpo", "MPO (stereo pair)"), ("jps", "JPS (stereo pair)")] {
+        let path = format!("pair.{ext}");
+        assert_eq!(save_filters(&path)[0].0, label);
+        assert!(OPEN_FILTERS.iter().any(|(name, exts)| *name == label && exts.contains(&ext)));
+        let saved = photocraft_io::export(&doc, &path, &photocraft_io::ExportOptions::default()).unwrap();
+        assert!(photocraft_io::import(&path, &saved.bytes).unwrap().document.stereo);
+    }
 }

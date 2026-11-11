@@ -99,8 +99,8 @@ pub(super) fn openable_name(path: &str) -> bool {
 /// process silently.
 #[cfg(not(target_arch = "wasm32"))]
 const OPENABLE: &[&str] = &[
-    "mpo", "jps", "pdn", "ora", "xcf", "xcfgz", "kra", "krz", "psd", "psb", "psdt", "pcraft", "svg", "svgz", "af", "afdesign", "afphoto", "afpub", "dng", "cr2", "nef",
-    "nrw", "arw", "pef",
+    "mpo", "jps", "pdn", "ora", "xcf", "xcfgz", "kra", "krz", "psd", "psb", "psdt", "pcraft", "svg", "svgz", "af", "afdesign", "afphoto", "afpub", "dng",
+    "cr2", "nef", "nrw", "arw", "pef",
 ];
 
 pub(crate) fn file_name(path: &str) -> String {
@@ -132,7 +132,9 @@ pub fn layered_extension(ext: &str) -> bool {
 /// doesn't hold the document is a copy, and File › Save goes through Save As, so an editable
 /// original is never overwritten with less than it had (#3806).
 pub fn holds(doc: &photocraft_doc::Document, ext: &str) -> bool {
-    if photocraft_io::stereo_metadata_loss(doc, ext).is_some() { return false; }
+    if photocraft_io::stereo_metadata_loss(doc, ext).is_some() {
+        return false;
+    }
     match ext {
         "psd" | "psb" | "pcraft" => true,
         "ora" => photocraft_io::ora_losses(doc).is_empty(),
@@ -152,7 +154,9 @@ pub fn losses_at(doc: &photocraft_doc::Document, path: &str) -> Vec<String> {
         Some("ora") => photocraft_io::ora_losses(doc),
         _ => Vec::new(),
     };
-    if let Some(loss) = photocraft_io::stereo_metadata_loss(doc, path) { losses.push(loss.into()); }
+    if let Some(loss) = photocraft_io::stereo_metadata_loss(doc, path) {
+        losses.push(loss.into());
+    }
     losses
 }
 
