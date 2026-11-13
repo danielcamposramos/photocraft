@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.95"
 
 [workspace.dependencies]
-craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d", features = ["serde"] }
+craft-ui = { path = "../craft-libs-common/crates/ui", features = ["serde"] }
 # internal
 photocraft-geom = { path = "crates/geom" }
 photocraft-color = { path = "crates/color" }
@@ -38,20 +38,20 @@ photocraft-testkit = { path = "crates/testkit" }
 photocraft-tablet = { path = "crates/tablet" }
 photocraft-ipp = { path = "crates/ipp" }
 # Replace the sibling path with its reviewed immutable upstream revision before publication.
-craft-stereo-window = { path = "../craft-libs/crates/stereo-window", version = "0.1.0" }
+craft-stereo-window = { path = "../craft-libs-common/crates/stereo-window", version = "0.1.0" }
 
 # external
-craft-print = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
-craft-pdf = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d", features = ["raster"] }
-craft-docpath = { version = "0.1.0", git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
-craft-jpeg = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
-craft-pcraft-format = { git = "https://github.com/storytold/craft-libs", rev = "b8f7d93b00dfb8f172938f3d2d796ae62dcfe123" }
+craft-print = { path = "../craft-libs-common/crates/print" }
+craft-pdf = { path = "../craft-libs-common/crates/pdf", features = ["raster"] }
+craft-docpath = { path = "../craft-libs-common/crates/docpath", version = "0.1.0" }
+craft-jpeg = { path = "../craft-libs-common/crates/jpeg" }
+craft-pcraft-format = { path = "../craft-libs-common/crates/pcraft-format" }
 # Interface translations: lookup, fallback, CLDR plurals and language names over the craft-i18n
 # catalogs that `crates/ui-egui/build.rs` embeds from `CRAFT_I18N_DIR` (storytold/craft-i18n, at
 # the commit in `craft-i18n.rev`). Already in the tree through craft-ui.
-craft-i18n = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
+craft-i18n = { path = "../craft-libs-common/crates/i18n" }
 # craft-update: app-specific pretend versions apply to startup and manual checks.
-craft-update = { git = "https://github.com/storytold/craft-libs", version = "=0.1.0", rev = "1b34eba41e62138fc2438d2734523b302840b45d", features = ["egui"] }
+craft-update = { path = "../craft-libs-common/crates/update", version = "=0.1.0", features = ["egui"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
@@ -195,6 +195,9 @@ opt-level = 3
 
 # Keep the complete egui family and native event bridge on reviewed fork commits.
 [patch.crates-io]
+# Keep the PDF backend sources at the common library revision; dependency patch tables are ignored.
+hayro-cmap = { path = "../craft-libs-common/vendor/hayro-cmap" }
+hayro-postscript = { path = "../craft-libs-common/vendor/hayro-postscript" }
 ecolor = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 emath = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 epaint = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
@@ -211,7 +214,7 @@ egui_demo_lib = { git = "https://github.com/storytold/egui.git", rev = "6d518fc7
 egui_inspection = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
 # craft-pdf's vendored Hayro trees: consumers patch the same craft-libs revision (crates/pdf README).
-hayro = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
-hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
-hayro-interpret = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
-hayro-jbig2 = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
+hayro = { path = "../craft-libs-common/vendor/hayro" }
+hayro-syntax = { path = "../craft-libs-common/vendor/hayro-syntax" }
+hayro-interpret = { path = "../craft-libs-common/vendor/hayro-interpret" }
+hayro-jbig2 = { path = "../craft-libs-common/vendor/hayro-jbig2" }

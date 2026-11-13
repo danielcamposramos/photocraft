@@ -243,7 +243,8 @@ pub fn from_metadata(meta: &Value) -> Result<Vec<Crate>, String> {
                 Some("build") => DepKind::Build,
                 _ => DepKind::Normal,
             };
-            let workspace = members.contains(&dname.as_str()) || d["path"].is_string();
+            // --no-deps lists only workspace members; a path can belong to a sibling workspace.
+            let workspace = members.contains(&dname.as_str());
             deps.push(Dep { name: dname, kind, workspace });
         }
         out.push(Crate { name, deps });
@@ -397,5 +398,39 @@ mod tests {
         assert!(doc.deps[0].workspace && !doc.deps[1].workspace);
         assert_eq!(doc.deps[2].kind, Dev);
         assert!(check(&g).is_empty());
+    }
+
+    #[test]
+    fn metadata_external_path_dependencies_are_not_members() {
+        for kind in [None, Some("dev"), Some("build")] {
+            let meta = serde_json::json!({"packages": [{"name": "photocraft-codecs", "dependencies": [
+                {"name": "craft-jpeg", "kind": kind, "path": "/shared/craft-libs/crates/jpeg"}
+            ]}]});
+            let graph = from_metadata(&meta).unwrap();
+            assert!(!graph[0].deps[0].workspace, "an external path is not a workspace member: {kind:?}");
+            assert!(check(&graph).is_empty());
+        }
+    }
+
+    #[test]
+    fn metadata_external_ui_path_still_checks_the_ui_rule() {
+        let meta = serde_json::json!({"packages": [{"name": "photocraft-geom", "dependencies": [
+            {"name": "craft-ui", "rename": "toolkit", "kind": null, "path": "/shared/craft-libs/crates/ui"}
+        ]}]});
+        let graph = from_metadata(&meta).unwrap();
+        assert!(matches!(check(&graph).as_slice(), [Violation::UiBelowL6 { layer: 0, .. }]));
+    }
+
+    #[test]
+    fn metadata_member_path_still_checks_the_standalone_rule() {
+        let meta = serde_json::json!({"packages": [
+            {"name": "photocraft-codecs", "dependencies": [
+                {"name": "photocraft-geom", "kind": null, "path": "/app/crates/geom"}
+            ]},
+            {"name": "photocraft-geom", "dependencies": []}
+        ]});
+        let graph = from_metadata(&meta).unwrap();
+        assert!(graph[0].deps[0].workspace);
+        assert!(matches!(check(&graph).as_slice(), [Violation::StandaloneHasWorkspaceDep { .. }]));
     }
 }

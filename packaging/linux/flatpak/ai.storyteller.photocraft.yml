@@ -127,5 +127,5 @@ modules:
       # The interface translations at the commit in craft-i18n.rev (a test keeps the two equal).
       - type: git
         url: https://github.com/storytold/craft-i18n
-        commit: e02939ef009218e81c44e8ec001fbb7603461de4
+        commit: 594ca159508693315b74dec5e026fbb884fa934a
         dest: craft-i18n
