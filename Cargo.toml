@@ -195,6 +195,8 @@ opt-level = 3
 
 # Keep the complete egui family and native event bridge on reviewed fork commits.
 [patch.crates-io]
+vello_common = { path = "../craft-libs-common/vendor/vello_common" }
+vello_cpu = { path = "../craft-libs-common/vendor/vello_cpu" }
 # Keep the PDF backend sources at the common library revision; dependency patch tables are ignored.
 hayro-cmap = { path = "../craft-libs-common/vendor/hayro-cmap" }
 hayro-postscript = { path = "../craft-libs-common/vendor/hayro-postscript" }
