@@ -94,6 +94,7 @@ pub fn page(page: &Page<'_>, rect: Rect, ctl: &Interrupt) -> Result<Vec<Layer>, 
                 InterpreterWarning::ImageDecodeFailure => 1,
                 InterpreterWarning::UnsupportedFont => 2,
                 InterpreterWarning::ContentTruncated => 4,
+                InterpreterWarning::ColorFallback | InterpreterWarning::MalformedIndexedImage | InterpreterWarning::Type3WidthsMissing => 8,
             };
             sink.fetch_or(bit, Ordering::Relaxed);
         }),
@@ -156,6 +157,10 @@ pub fn page(page: &Page<'_>, rect: Rect, ctl: &Interrupt) -> Result<Vec<Layer>, 
     }
     if warned & 1 != 0 {
         return Err(EditableError::Unsupported("an image could not be decoded"));
+    }
+    // Recovered values cannot become faithful editable objects; the raster route reports the detail.
+    if warned & 8 != 0 {
+        return Err(EditableError::Unsupported("the page could not be interpreted"));
     }
     if let Some(reason) = device.unsupported {
         return Err(EditableError::Unsupported(reason));
@@ -1633,15 +1638,60 @@ mod tests {
     }
 
     #[test]
-    fn a_dashed_zero_length_line_falls_back() {
-        let bytes = pdf("[1 1] 0 d 10 10 m 20 20 l 30 30 m h S");
-        let options = ImportOptions { pdf_dpi: 72.0, pdf_editable: true, ..ImportOptions::default() };
-        let imported = import_with_options_and_interrupt("dash.pdf", &bytes, &options, &Interrupt::NONE).expect("import");
-        assert!(
-            imported.warnings.iter().any(|warning| warning.contains("dashed zero-length subpath") && warning.contains("rasterised")),
-            "{:?}",
-            imported.warnings
-        );
+    fn a_dashed_butt_or_square_cap_degenerate_subpath_stays_editable() {
+        // ISO 32000-2 8.5.3.2: these caps paint no degenerate subpath. Keep the original fixture.
+        for cap in [0, 2] {
+            let content = if cap == 0 { "[1 1] 0 d 10 10 m 20 20 l 30 30 m h S".to_owned() } else { format!("{cap} J [1 1] 0 d 10 10 m 20 20 l 30 30 m h S") };
+            let bytes = pdf(&content);
+            let options = ImportOptions { pdf_dpi: 72.0, pdf_editable: true, ..ImportOptions::default() };
+            let imported = import_with_options_and_interrupt("dash.pdf", &bytes, &options, &Interrupt::NONE).expect("import");
+            assert!(!imported.warnings.iter().any(|warning| warning.contains("rasterised")), "{:?}", imported.warnings);
+            let shape = children(&imported.document)
+                .iter()
+                .find_map(|layer| match &layer.content {
+                    LayerContent::Shape(shape) => Some(shape),
+                    _ => None,
+                })
+                .expect("the ordinary line stays editable");
+            assert_eq!(shape.path.subpaths.len(), 1, "the non-painting degenerate subpath is omitted");
+            let pixels = photocraft_compose::flatten_to_surface(&imported.document, imported.document.pixel_format(), None);
+            assert!(pixels.read_region(Rect::new(28, 68, 32, 72)).iter().all(|value| *value == 1.0), "the degenerate point paints no dot for cap {cap}");
+        }
+    }
+
+    #[test]
+    fn a_dashed_zero_length_shape_is_rejected_by_the_device() {
+        let mut device = PathDevice {
+            doc: Affine::IDENTITY,
+            clip: Rect::new(0, 0, 200, 100),
+            fmt: PixelFormat::new(ColorMode::Rgb, SampleType::U8, true),
+            dpi: 72.0,
+            ctl: Interrupt::NONE,
+            layers: Vec::new(),
+            glyphs: Vec::new(),
+            glyph_bytes: 0,
+            strokes: Vec::new(),
+            fonts: Vec::new(),
+            font_keys: HashMap::new(),
+            seen_fonts: HashSet::new(),
+            soft_mask: false,
+            clips: Vec::new(),
+            knots: 0,
+            cached: 0,
+            unsupported: None,
+            cancelled: false,
+        };
+        let mut bez = BezPath::new();
+        bez.move_to((10.0, 10.0));
+        bez.line_to((20.0, 20.0));
+        bez.move_to((30.0, 30.0));
+        bez.close_path();
+        let mut knots = 0;
+        let path = to_path(&bez, &Affine::IDENTITY, &mut knots).expect("a raw device path");
+        let stroke = ShapeStroke { dashes: vec![1.0, 1.0], ..Default::default() };
+        device.push_shape(path, None, Some(stroke));
+        assert_eq!(device.unsupported, Some("a dashed zero-length subpath"));
+        assert!(device.layers.is_empty(), "never publish a partial editable page");
     }
 
     #[test]

@@ -194,3 +194,64 @@ fn cancelling_before_and_between_pages_is_reported() {
         other => panic!("cancelling after the first page returned {:?}", other.map(|_| ())),
     }
 }
+
+#[test]
+fn interpreter_diagnostics_are_reported_by_the_pdf_importer() {
+    let glyph = "10 0 d0 1 0 0 rg 0 0 10 10 re f";
+    let font = format!(
+        "5 0 obj << /Type /Font /Subtype /Type3 /FontBBox [0 0 10 10] /FontMatrix [0.1 0 0 0.1 0 0] /Encoding << /Type /Encoding /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >> endobj\n6 0 obj << /Length {} >> stream\n{glyph}\nendstream endobj",
+        glyph.len()
+    );
+    let cases = [
+        (
+            "/ColorSpace << /Bad [/Separation /Spot /DeviceRGB 5 0 R] >>",
+            "/Bad cs 1 scn 0 0 10 20 re f",
+            "5 0 obj << /FunctionType 999 >> endobj",
+            "a color space could not be used; fallback colors were rendered",
+        ),
+        (
+            "/XObject << /Im 5 0 R >>",
+            "q 20 0 0 20 0 0 cm /Im Do Q",
+            "5 0 obj << /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace [/Indexed /DeviceRGB 7 <FF000000FF00>] /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length 5 >> stream\n0001>\nendstream endobj",
+            "an indexed-color image has invalid data",
+        ),
+        ("/Font << /F 5 0 R >>", "BT /F 10 Tf 1 0 0 1 0 0 Tm (AA) Tj ET", font.as_str(), "a Type 3 font has no widths; glyph spacing was inferred"),
+    ];
+    for (resources, content, extra, reason) in cases {
+        let pdf = format!(
+            "%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 40 20] /Contents 4 0 R /Resources << {resources} >> >> endobj\n4 0 obj << /Length {} >> stream\n{content}\nendstream endobj\n{extra}\ntrailer << /Root 1 0 R >>\n%%EOF",
+            content.len()
+        );
+        let options = ImportOptions { pdf_dpi: 72.0, ..Default::default() };
+        let result =
+            import_with_options_and_interrupt("diagnostic.pdf", pdf.as_bytes(), &options, &Interrupt::NONE).expect("PDF with reported recovery imports");
+        let expected = format!("PDF page 1: {reason}");
+        assert!(result.warnings.contains(&expected), "specific recovery warning {expected:?}, got {:?}", result.warnings);
+        assert!(!result.warnings.iter().any(|line| line.contains("was substituted")), "a recovery must not be mislabeled as font substitution");
+        #[cfg(feature = "pdf-editable")]
+        {
+            let options = ImportOptions { pdf_dpi: 72.0, pdf_editable: true, ..Default::default() };
+            let editable = import_with_options_and_interrupt("diagnostic.pdf", pdf.as_bytes(), &options, &Interrupt::NONE)
+                .expect("an unsupported editable page is imported visibly as raster");
+            assert!(editable.warnings.contains(&expected), "the raster recovery detail is retained: {:?}", editable.warnings);
+            assert!(
+                editable.warnings.iter().any(|line| line.contains("the page was rasterised")),
+                "an approximate editable page must say why it became raster: {:?}",
+                editable.warnings
+            );
+            let LayerContent::Group(group) = &editable.document.layers.first().expect("one page group").content else { panic!("expected a page group") };
+            assert!(
+                matches!(group.children.first().map(|layer| &layer.content), Some(LayerContent::Raster(_))),
+                "recovered content is not presented as faithful editable objects"
+            );
+            let format = result.document.pixel_format();
+            let raster = photocraft_compose::flatten_to_surface(&result.document, format, None);
+            let recovered = photocraft_compose::flatten_to_surface(&editable.document, format, None);
+            assert_eq!(
+                raster.read_region(result.document.bounds()),
+                recovered.read_region(editable.document.bounds()),
+                "the declared raster route is the same page, not a partial vector import"
+            );
+        }
+    }
+}

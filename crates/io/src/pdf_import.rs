@@ -200,6 +200,15 @@ pub fn import(name: &str, bytes: &[u8], opts: &ImportOptions, ctl: &Interrupt) -
         if rendered.diagnostics.content_truncated {
             warnings.push(format!("PDF page {page_number}: some content was omitted (a decode or memory limit)"));
         }
+        if rendered.diagnostics.color_fallback {
+            warnings.push(format!("PDF page {page_number}: a color space could not be used; fallback colors were rendered"));
+        }
+        if rendered.diagnostics.malformed_indexed_image {
+            warnings.push(format!("PDF page {page_number}: an indexed-color image has invalid data"));
+        }
+        if rendered.diagnostics.type3_widths_missing {
+            warnings.push(format!("PDF page {page_number}: a Type 3 font has no widths; glyph spacing was inferred"));
+        }
         ctl.check().map_err(|_| IoError::Cancelled)?;
 
         let mut surface = Surface::new(PixelFormat::new(ColorMode::Rgb, SampleType::U8, true));

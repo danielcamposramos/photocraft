@@ -44,8 +44,26 @@ impl Notice {
     /// `s` (the title or a line) in the current language, with [`Notice::args`] filled in.
     pub fn text(&self, s: &str) -> String {
         let args: Vec<(&str, &str)> = self.args.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-        crate::i18n::fmt(crate::i18n::t(s), &args)
+        let pdf = pdf_warning_text(s);
+        crate::i18n::fmt(pdf.as_deref().unwrap_or_else(|| crate::i18n::t(s)), &args)
     }
+}
+
+/// Preserve the importer's diagnostic identity and translate its page argument at display time.
+fn pdf_warning_text(text: &str) -> Option<String> {
+    let (page, reason) = text.strip_prefix("PDF page ")?.split_once(": ")?;
+    if page.is_empty() || !page.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let template = match reason {
+        "a color space could not be used; fallback colors were rendered" => {
+            tl!("PDF page {page}: a color space could not be used; fallback colors were rendered")
+        }
+        "an indexed-color image has invalid data" => tl!("PDF page {page}: an indexed-color image has invalid data"),
+        "a Type 3 font has no widths; glyph spacing was inferred" => tl!("PDF page {page}: a Type 3 font has no widths; glyph spacing was inferred"),
+        _ => return None,
+    };
+    Some(crate::i18n::fmt(template, &[("page", page)]))
 }
 
 /// Show a notice (newest last); returns its id.
@@ -150,6 +168,7 @@ fn dismiss(app: &mut PhotocraftApp, id: u64) {
 /// bar says how many there were, and a notice lists them. Nothing happens when there are none.
 pub fn io_warnings(app: &mut PhotocraftApp, what: &str, warnings: &[String]) {
     let Some(first) = warnings.first() else { return };
+    let first = pdf_warning_text(first).unwrap_or_else(|| first.clone());
     let n = warnings.len();
     let title = crate::i18n::fmt(&crate::i18n::trn(crate::i18n::current(), n as u64, "{what} with {n} warning", "{what} with {n} warnings"), &[("what", what)]);
     app.ui.status = if n == 1 { format!("{what}: {first}") } else { format!("{title}: {first} …") };
@@ -288,6 +307,58 @@ mod tests {
     use super::*;
     use crate::{PhotocraftApp, Services};
     use photocraft_engine::Session;
+
+    #[test]
+    fn pdf_backend_notices_keep_each_diagnostic_and_follow_live_language() {
+        let warnings: Vec<String> = vec![
+            "PDF page 13: a color space could not be used; fallback colors were rendered",
+            "PDF page 13: an indexed-color image has invalid data",
+            "PDF page 13: a Type 3 font has no widths; glyph spacing was inferred",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        let mut app = PhotocraftApp::new(Session::new(), Services::default());
+        crate::i18n::with_language(crate::i18n::Lang::EN, || io_warnings(&mut app, "Opened x.pdf", &warnings));
+        let notice = app.ui.notices.last().expect("PDF warnings are visible");
+        assert_eq!(notice.lines, warnings, "retain the original diagnostic identity");
+        crate::i18n::with_language(crate::i18n::Lang::EN, || {
+            for line in &notice.lines {
+                assert_eq!(notice.text(line), *line);
+            }
+        });
+        assert!(crate::i18n::catalogs_embedded(), "the edition witness requires its catalog input");
+        for code in ["pl", "pt-br", "fr", "de", "es", "ja", "ko", "zh-hans", "zh-hant"] {
+            let language = crate::i18n::Lang::from_code(code).expect("required language is embedded");
+            crate::i18n::with_language(language, || {
+                for line in &notice.lines {
+                    let text = notice.text(line);
+                    assert_ne!(text, *line, "{code} must translate this diagnostic");
+                    assert!(!text.contains("{page}"), "the page placeholder is expanded: {text}");
+                    assert_eq!(text.matches("13").count(), 1, "the page is kept once: {text}");
+                }
+            });
+        }
+        let spanish = crate::i18n::Lang::from_code("es").expect("Spanish is embedded");
+        crate::i18n::with_language(spanish, || {
+            let expected = [
+                "Página 13 del PDF: no se pudo utilizar un espacio de color; se representaron colores alternativos",
+                "Página 13 del PDF: una imagen con colores indexados contiene datos no válidos",
+                "Página 13 del PDF: una fuente Type 3 no tiene anchos; se estimó el espaciado de los glifos",
+            ];
+            for (line, expected) in notice.lines.iter().zip(expected) {
+                assert_eq!(notice.text(line), expected);
+            }
+        });
+        crate::i18n::with_language(spanish, || {
+            io_warnings(&mut app, "Opened x.pdf", &warnings[..1]);
+            assert!(
+                app.ui.status.ends_with("Página 13 del PDF: no se pudo utilizar un espacio de color; se representaron colores alternativos"),
+                "the status also translates the diagnostic: {}",
+                app.ui.status
+            );
+        });
+    }
 
     #[test]
     fn wayland_session_does_not_post_unavailable_notice() {
